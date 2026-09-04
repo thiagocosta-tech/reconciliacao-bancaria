@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reconciliação Bancária · SBS Collection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --paper: #f4f1ea;
+    --paper-raised: #ffffff;
+    --paper-sunk: #ebe6db;
+    --ink: #201c14;
+    --ink-soft: #6b6252;
+    --line: #ddd5c2;
+    --accent: #b07a2e;
+    --accent-soft: #b07a2e1a;
+    --ok: #2e6b46;
+    --ok-bg: #2e6b461a;
+    --bad: #a23f3f;
+    --bad-bg: #a23f3f1a;
+    --warn: #a3771f;
+    --warn-bg: #a3771f1a;
+    --focus: #4a6fa5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1c1a15;
+      --paper-raised: #26231c;
+      --paper-sunk: #15130f;
+      --ink: #ede7d9;
+      --ink-soft: #a89d86;
+      --line: #3a352a;
+      --accent: #d4a24f;
+      --accent-soft: #d4a24f22;
+      --ok: #6fbd8c;
+      --ok-bg: #6fbd8c22;
+      --bad: #d98080;
+      --bad-bg: #d9808022;
+      --warn: #d9b25f;
+      --warn-bg: #d9b25f22;
+      --focus: #86a9e0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1c1a15;
+    --paper-raised: #26231c;
+    --paper-sunk: #15130f;
+    --ink: #ede7d9;
+    --ink-soft: #a89d86;
+    --line: #3a352a;
+    --accent: #d4a24f;
+    --accent-soft: #d4a24f22;
+    --ok: #6fbd8c;
+    --ok-bg: #6fbd8c22;
+    --bad: #d98080;
+    --bad-bg: #d9808022;
+    --warn: #d9b25f;
+    --warn-bg: #d9b25f22;
+    --focus: #86a9e0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Public Sans', system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
+  header.top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.4rem; }
+  .brand { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .brand span { color: var(--accent); }
+  h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
+  .sub { color: var(--ink-soft); font-size: 0.95rem; margin: 0 0 1.8rem; }
+  .meta-line { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
+
+  .tabs { display: flex; gap: 0.4rem; border-bottom: 1px solid var(--line); margin-bottom: 1.8rem; }
+  .tab { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; letter-spacing: 0.02em; padding: 0.7rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--ink-soft); cursor: pointer; }
+  .tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 1.4rem 1.5rem; margin-bottom: 1.4rem; }
+  .card h2 { font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.35rem; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 0.6rem 0.7rem; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--paper-sunk); color: var(--ink); font-size: 0.92rem; font-family: inherit;
+  }
+  .field input:focus, .field textarea:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .row { display: flex; gap: 0.7rem; align-items: end; flex-wrap: wrap; }
+  .row .field { flex: 1; min-width: 220px; margin-bottom: 0; }
+
+  button.primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 6px;
+    padding: 0.65rem 1.3rem; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+  }
+  button.primary:hover { filter: brightness(1.06); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.ghost { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 0.5rem 0.9rem; font-size: 0.82rem; cursor: pointer; }
+  button.small-ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); border-radius: 5px; padding: 0.35rem 0.7rem; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
+  button.small-bad { background: var(--bad-bg); color: var(--bad); border: 1px solid var(--bad); border-radius: 5px; padding: 0.35rem 0.7rem; font-size: 0.76rem; font-weight: 600; cursor: pointer; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
+  th { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+  td.num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; }
+  .table-scroll { overflow-x: auto; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .summary-box { background: var(--paper-sunk); border-radius: 8px; padding: 0.9rem 1rem; }
+  .summary-box .label { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.3rem; }
+  .summary-box .value { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .summary-box.warn .value { color: var(--warn); }
+  .summary-box.bad .value { color: var(--bad); }
+
+  .ajuste-item { border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: 0.8rem; background: var(--paper-sunk); }
+  .ajuste-item .tipo { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.25rem 0.5rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn); margin-bottom: 0.5rem; }
+  .ajuste-item .explicacao { font-size: 0.88rem; margin: 0.4rem 0 0.8rem; color: var(--ink); }
+  .ajuste-item .valores { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.6rem; }
+  .decisao-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  .decisao-row input[type=text] { flex: 1; min-width: 180px; padding: 0.4rem 0.6rem; border-radius: 5px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 0.82rem; }
+  .decisao-feita { font-size: 0.82rem; padding: 0.5rem 0.7rem; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
+
+  .status-msg { font-size: 0.88rem; padding: 0.7rem 0.9rem; border-radius: 6px; margin-top: 0.8rem; }
+  .status-msg.info { background: var(--accent-soft); color: var(--accent); }
+  .status-msg.ok { background: var(--ok-bg); color: var(--ok); }
+  .status-msg.bad { background: var(--bad-bg); color: var(--bad); }
+  .hint { font-size: 0.82rem; color: var(--ink-soft); margin: 0.3rem 0 1rem; }
+  .empty { color: var(--ink-soft); font-size: 0.9rem; padding: 1rem 0; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 0.4rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">Well<span>hub</span> · SBS Collection</div>
+  </header>
+  <h1>Reconciliação Bancária</h1>
+  <p class="sub">Consulta por CNPJ, saldo real em aberto e ajustes que precisam de revisão.</p>
+  <div class="meta-line" id="meta-line">Base: carregando informação...</div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-panel="consulta" role="tab" aria-selected="true">Consulta por CNPJ</button>
+    <button class="tab" data-panel="atualizar" role="tab" aria-selected="false">Atualizar dados</button>
+  </div>
+
+  <!-- TAB 1: CONSULTA -->
+  <div class="panel active" data-panel="consulta">
+    <div class="card">
+      <h2>Buscar empresa</h2>
+      <div class="row">
+        <div class="field">
+          <label for="cnpj-input">CNPJ</label>
+          <input type="text" id="cnpj-input" placeholder="ex: 12.345.678/0001-99" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label for="autor-input">Seu nome (fica salvo neste navegador)</label>
+          <input type="text" id="autor-input" placeholder="ex: Thiago Costa">
+        </div>
+      </div>
+      <button class="primary" id="btn-buscar" style="margin-top:0.6rem;">Buscar</button>
+      <div id="busca-status"></div>
+    </div>
+
+    <div id="resultado-area"></div>
+  </div>
+
+  <!-- TAB 2: ATUALIZAR -->
+  <div class="panel" data-panel="atualizar">
+    <div class="card">
+      <h2>Atualizar base de dados</h2>
+      <p class="hint">
+        Envie aqui o arquivo exportado do NetSuite (mesmo relatório "AllAR" de sempre, em .csv ou .xlsx). A ferramenta filtra
+        automaticamente só o que está "Open" (em aberto), remove notas duplicadas, separa faturas-modelo e saldos residuais
+        de centavos (ajustes) antes de atualizar a planilha. Recomendado atualizar 1-2x por semana.
+      </p>
+      <div class="field">
+        <label for="file-input">Arquivo (.csv ou .xlsx)</label>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+      </div>
+      <div id="upload-status"></div>
+      <div id="upload-preview"></div>
+    </div>
+  </div>
+</div>
+
+<iframe name="hidden_upload_frame" style="display:none;"></iframe>
+
+<script>
+  var APPS_SCRIPT_URL = "https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
+  var jsonpCounter = 0;
+
+  function jsonp(params, onData, onTimeout) {
+    jsonpCounter++;
+    var cbName = "__cb_" + jsonpCounter + "_" + Date.now();
+    var timeoutId = setTimeout(function () {
+      delete window[cbName];
+      onTimeout && onTimeout();
+    }, 20000);
+    window[cbName] = function (data) {
+      clearTimeout(timeoutId);
+      delete window[cbName];
+      onData(data);
+    };
+    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); }).join("&");
+    var script = document.createElement('script');
+    script.src = APPS_SCRIPT_URL + "?" + qs + "&callback=" + cbName;
+    script.onerror = function () { clearTimeout(timeoutId); delete window[cbName]; onTimeout && onTimeout(); };
+    document.body.appendChild(script);
+    setTimeout(function () { script.remove(); }, 21000);
+  }
+
+  function postForm(payload, onDone) {
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = APPS_SCRIPT_URL;
+    form.target = 'hidden_upload_frame';
+    form.style.display = 'none';
+    var input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(function () { form.remove(); onDone && onDone(); }, 1500);
+  }
+
+  function parseNum(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? 0 : n;
+  }
+  function fmtBRL(n) {
+    return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function normCNPJ(v) { return String(v || '').replace(/\D/g, ''); }
+
+  // ---------- tab switching ----------
+  document.querySelectorAll('.tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+      document.querySelector('.panel[data-panel="' + btn.dataset.panel + '"]').classList.add('active');
+    });
+  });
+
+  // ---------- autor persistence ----------
+  var autorInput = document.getElementById('autor-input');
+  autorInput.value = localStorage.getItem('reconciliacao_autor') || '';
+  autorInput.addEventListener('change', function () { localStorage.setItem('reconciliacao_autor', autorInput.value); });
+
+  // ---------- meta line ----------
+  jsonp({ sheet: 'Meta' }, function (data) {
+    var rows = data.rows || [];
+    var found = rows.find(function (r) { return r['Chave'] === 'UltimaAtualizacao'; });
+    document.getElementById('meta-line').textContent = found ? ('Base atualizada em: ' + found['Valor']) : 'Base: sem registro de ultima atualizacao ainda.';
+  }, function () {
+    document.getElementById('meta-line').textContent = 'Base: nao foi possivel checar a data de atualizacao.';
+  });
+
+  // ---------- TAB 1: busca ----------
+  document.getElementById('btn-buscar').addEventListener('click', function () {
+    var cnpjRaw = document.getElementById('cnpj-input').value.trim();
+    var cnpj = normCNPJ(cnpjRaw);
+    var statusEl = document.getElementById('busca-status');
+    var resultEl = document.getElementById('resultado-area');
+    if (!cnpj) {
+      statusEl.innerHTML = '<div class="status-msg bad">Digite um CNPJ.</div>';
+      return;
+    }
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Buscando...</div>';
+    resultEl.innerHTML = '';
+
+    jsonp({ sheet: 'Notas', filterField: 'Tax ID', filterValue: cnpj }, function (notasData) {
+      jsonp({ sheet: 'Ajustes', filterField: 'Tax ID', filterValue: cnpj }, function (ajustesData) {
+        statusEl.innerHTML = '';
+        renderResultado(notasData.rows || [], ajustesData.rows || []);
+      }, function () {
+        statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel carregar os ajustes (timeout). Tente de novo.</div>';
+      });
+    }, function () {
+      statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel buscar (timeout). Tente de novo.</div>';
+    });
+  });
+
+  function renderResultado(notas, ajustes) {
+    var resultEl = document.getElementById('resultado-area');
+    if (notas.length === 0 && ajustes.length === 0) {
+      resultEl.innerHTML = '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse CNPJ.</div></div>';
+      return;
+    }
+
+    var totalRemaining = notas.reduce(function (s, n) { return s + parseNum(n['Remaining']); }, 0);
+    var totalBilled = notas.reduce(function (s, n) { return s + parseNum(n['Total Billed']); }, 0);
+    var totalPaid = notas.reduce(function (s, n) { return s + parseNum(n['Paid']); }, 0);
+    var empresa = (notas[0] && notas[0]['Company']) || (ajustes[0] && ajustes[0]['Company']) || '(nome nao encontrado)';
+
+    var html = '';
+    html += '<div class="card"><h2>' + escapeHtml(empresa) + '</h2>';
+    html += '<div class="summary-grid">';
+    html += summaryBox('Notas em aberto', notas.length, '');
+    html += summaryBox('Total cobrado', fmtBRL(totalBilled), '');
+    html += summaryBox('Total recebido', fmtBRL(totalPaid), '');
+    html += summaryBox('Saldo real em aberto', fmtBRL(totalRemaining), 'warn');
+    html += '</div>';
+
+    if (notas.length > 0) {
+      html += '<div class="table-scroll"><table><thead><tr><th>Invoice #</th><th>Tipo</th><th>Data</th><th>Vencimento</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
+      notas.forEach(function (n) {
+        html += '<tr><td>' + escapeHtml(n['Invoice #']) + '</td><td>' + escapeHtml(n['Transaction']) + '</td><td>' + escapeHtml(n['Date']) + '</td><td>' + escapeHtml(n['Due Date']) + '</td>' +
+          '<td class="num">' + fmtBRL(parseNum(n['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Paid'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Remaining'])) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+
+    if (ajustes.length > 0) {
+      html += '<div class="card"><h2>Reconciliação — ' + ajustes.length + ' ' + (ajustes.length === 1 ? 'item encontrado' : 'itens encontrados') + ' pra revisar</h2>';
+      html += '<p class="hint">A ferramenta comparou os valores e encontrou estes casos que parecem estar errados ou precisam de ação do financeiro. Dê OK se concorda, ou registre uma objeção explicando o motivo.</p>';
+      ajustes.forEach(function (a, idx) {
+        html += renderAjusteItem(a, idx);
+      });
+      html += '</div>';
+    }
+
+    resultEl.innerHTML = html;
+
+    ajustes.forEach(function (a, idx) {
+      wireAjusteButtons(a, idx);
+    });
+  }
+
+  function summaryBox(label, value, cls) {
+    return '<div class="summary-box ' + (cls || '') + '"><div class="label">' + label + '</div><div class="value">' + value + '</div></div>';
+  }
+
+  function renderAjusteItem(a, idx) {
+    return '<div class="ajuste-item" id="ajuste-' + idx + '">' +
+      '<span class="tipo">' + escapeHtml(a['Tipo de Ajuste']) + '</span>' +
+      '<div class="valores">Internal ID ' + escapeHtml(a['Internal ID']) + ' &middot; Invoice ' + escapeHtml(a['Invoice #']) + ' &middot; ' + escapeHtml(a['Transaction']) +
+      ' &middot; Total Billed ' + fmtBRL(parseNum(a['Total Billed'])) + ' &middot; Remaining ' + fmtBRL(parseNum(a['Remaining'])) + '</div>' +
+      '<div class="explicacao">' + escapeHtml(a['Explicacao']) + '</div>' +
+      '<div class="decisao-row" id="decisao-row-' + idx + '">' +
+      '<button class="small-ok" data-idx="' + idx + '" data-decisao="OK">OK, concordo</button>' +
+      '<button class="small-bad" data-idx="' + idx + '" data-decisao="Objecao">Objeção</button>' +
+      '<input type="text" id="motivo-' + idx + '" placeholder="Motivo (obrigatorio pra objecao)">' +
+      '</div></div>';
+  }
+
+  function wireAjusteButtons(a, idx) {
+    var row = document.getElementById('decisao-row-' + idx);
+    if (!row) return;
+    row.querySelectorAll('button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var decisao = btn.dataset.decisao;
+        var motivo = document.getElementById('motivo-' + idx).value.trim();
+        var autor = document.getElementById('autor-input').value.trim() || '(nao informado)';
+        if (decisao === 'Objecao' && !motivo) {
+          alert('Escreva o motivo da objeção antes de enviar.');
+          return;
+        }
+        row.innerHTML = '<span class="spinner"></span>Enviando...';
+        var entry = [{
+          'Internal ID': a['Internal ID'],
+          'Tax ID': a['Tax ID'],
+          'Empresa': a['Company'],
+          'Decisao': decisao === 'OK' ? 'OK' : 'Objecao',
+          'Motivo': motivo || '(sem motivo informado)',
+          'Autor': autor,
+          'Data': new Date().toLocaleString('pt-BR')
+        }];
+        jsonp({
+          action: 'write', sheet: 'Anotacoes', writeAction: 'append',
+          rows: JSON.stringify(entry)
+        }, function (resp) {
+          if (resp.error) {
+            row.innerHTML = '<div class="status-msg bad">Erro: ' + escapeHtml(resp.error) + '</div>';
+            return;
+          }
+          document.getElementById('ajuste-' + idx).querySelector('.decisao-row').outerHTML =
+            '<div class="decisao-feita">Registrado: ' + (decisao === 'OK' ? 'OK' : 'Objeção') + ' por ' + escapeHtml(autor) + '</div>';
+        }, function () {
+          row.innerHTML = '<div class="status-msg bad">Timeout ao enviar. Tente de novo.</div>';
+        });
+      });
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  // ---------- TAB 2: atualizar dados ----------
+  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
+  var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
+
+  document.getElementById('file-input').addEventListener('change', function (evt) {
+    var file = evt.target.files[0];
+    if (!file) return;
+    var statusEl = document.getElementById('upload-status');
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo arquivo...</div>';
+    document.getElementById('upload-preview').innerHTML = '';
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var rows;
+        if (file.name.toLowerCase().endsWith('.csv')) {
+          rows = parseCSV(e.target.result);
+        } else {
+          var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: false });
+          var sheet = wb.Sheets[wb.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+        }
+        statusEl.innerHTML = '<div class="status-msg info">Processando ' + rows.length + ' linhas...</div>';
+        setTimeout(function () { processRows(rows); }, 30);
+      } catch (err) {
+        statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler o arquivo: ' + escapeHtml(err.message) + '</div>';
+      }
+    };
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(file, 'UTF-8');
+    } else {
+      reader.readAsBinaryString(file);
+    }
+  });
+
+  function parseCSV(text) {
+    var lines = text.split(/\r\n|\n/).filter(function (l) { return l.length > 0; });
+    if (lines.length === 0) return [];
+    var headers = splitCSVLine(lines[0]);
+    var out = [];
+    for (var i = 1; i < lines.length; i++) {
+      var cols = splitCSVLine(lines[i]);
+      var obj = {};
+      headers.forEach(function (h, idx) { obj[h] = cols[idx] !== undefined ? cols[idx] : ''; });
+      out.push(obj);
+    }
+    return out;
+  }
+  function splitCSVLine(line) {
+    var result = [];
+    var cur = '';
+    var inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (line[i + 1] === '"') { cur += '"'; i++; } else { inQuotes = false; }
+        } else { cur += c; }
+      } else {
+        if (c === '"') inQuotes = true;
+        else if (c === ',') { result.push(cur); cur = ''; }
+        else cur += c;
+      }
+    }
+    result.push(cur);
+    return result;
+  }
+
+  function excelSerialToDate(v) {
+    if (v === '' || v === null || v === undefined) return '';
+    var n = Number(v);
+    if (isNaN(n)) return String(v);
+    var date = new Date(Math.round((n - 25569) * 86400 * 1000));
+    return date.toISOString().substring(0, 10);
+  }
+
+  var pendingClean = null, pendingAjustes = null;
+
+  function processRows(rawRows) {
+    var statusEl = document.getElementById('upload-status');
+    var open = rawRows.filter(function (r) { return r['Status'] === 'Open'; });
+
+    var byId = {};
+    open.forEach(function (r) {
+      var id = r['Internal ID'];
+      if (!byId[id]) byId[id] = [];
+      byId[id].push(r);
+    });
+
+    var clean = [], ajustes = [];
+    Object.keys(byId).forEach(function (id) {
+      var group = byId[id];
+      group.slice(1).forEach(function (r) { ajustes.push(makeAjuste(r, 'Duplicata', 'Mesma nota (Internal ID ' + id + ') aparece mais de uma vez no arquivo enviado.')); });
+      var r = group[0];
+      var invoiceNum = r['Invoice #'];
+      var status = r['Status'];
+      if (invoiceNum === 'Memorized' || !status) {
+        ajustes.push(makeAjuste(r, 'Fatura-modelo (nao emitida)', 'Registro sem status definido / Invoice # = Memorized - parece nunca ter sido emitido de fato.'));
+        return;
+      }
+      var rem = Math.abs(parseNum(r['Remaining']));
+      if (rem > 0 && rem <= 0.02) {
+        ajustes.push(makeAjuste(r, 'Poeira de centavos', 'Saldo residual de arredondamento (R$ ' + rem.toFixed(2) + ').'));
+        return;
+      }
+      clean.push(cleanRow(r));
+    });
+
+    pendingClean = clean;
+    pendingAjustes = ajustes;
+
+    statusEl.innerHTML = '<div class="status-msg ok">Arquivo processado.</div>';
+    document.getElementById('upload-preview').innerHTML =
+      '<div class="card"><h2>Prévia</h2>' +
+      '<div class="summary-grid">' +
+      summaryBox('Linhas no arquivo', rawRows.length, '') +
+      summaryBox('Notas limpas (Notas)', clean.length, '') +
+      summaryBox('Ajustes separados', ajustes.length, 'warn') +
+      '</div>' +
+      '<p class="hint">Isso vai <strong>substituir completamente</strong> o conteúdo atual das abas "Notas" e "Ajustes" na planilha. Confira os números acima antes de confirmar.</p>' +
+      '<button class="primary" id="btn-confirmar-upload">Confirmar atualização</button>' +
+      '<div id="confirm-status"></div></div>';
+
+    document.getElementById('btn-confirmar-upload').addEventListener('click', confirmUpload);
+  }
+
+  function cleanRow(r) {
+    var out = {};
+    CLEAN_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
+    out['Date'] = excelSerialToDate(out['Date']);
+    out['Due Date'] = excelSerialToDate(out['Due Date']);
+    out['New Due Date'] = excelSerialToDate(out['New Due Date']);
+    return out;
+  }
+  function makeAjuste(r, tipo, explicacao) {
+    var out = {};
+    AJUSTE_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
+    out['Tipo de Ajuste'] = tipo;
+    out['Explicacao'] = explicacao;
+    return out;
+  }
+
+  function confirmUpload() {
+    var statusEl = document.getElementById('confirm-status');
+    var autor = document.getElementById('autor-input').value.trim() || '(nao informado)';
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando "Notas" (' + pendingClean.length + ' linhas)...</div>';
+
+    postForm({ action: 'replace', sheet: 'Notas', headers: CLEAN_COLUMNS, rows: pendingClean }, function () {
+      statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando "Ajustes" (' + pendingAjustes.length + ' linhas)...</div>';
+      setTimeout(function () {
+        postForm({ action: 'replace', sheet: 'Ajustes', headers: AJUSTE_COLUMNS, rows: pendingAjustes }, function () {
+          var meta = [{ 'Chave': 'UltimaAtualizacao', 'Valor': new Date().toLocaleString('pt-BR') + ' por ' + autor }];
+          jsonp({ action: 'write', sheet: 'Meta', writeAction: 'upsert', keyField: 'Chave', rows: JSON.stringify(meta) }, function () {
+            statusEl.innerHTML = '<div class="status-msg ok">Atualização concluída! A aba "Consulta por CNPJ" já está usando os dados novos.</div>';
+          }, function () {
+            statusEl.innerHTML = '<div class="status-msg ok">Dados atualizados (não foi possível confirmar a data de atualização, mas os dados foram enviados).</div>';
+          });
+        });
+      }, 2000);
+    });
+  }
+</script>
+</body>
+</html>
