@@ -805,6 +805,24 @@
     var statusEl = document.getElementById('upload-status');
     pendingHistorico = slimRows;
 
+    var clean = [], ajustes = [];
+
+    // Checagem geral (em TODAS as linhas, nao so as "Open"): qualquer
+    // status diferente de "Open" que ainda tenha saldo (Remaining) diferente
+    // de zero e uma inconsistencia - ex: o caso da BANESTES (status em
+    // branco, Invoice # = Memorized, nunca emitida de fato, mas com saldo
+    // de R$704,79 preso no sistema). Sem essa checagem esses casos passam
+    // batido, porque nunca aparecem entre as linhas "Open".
+    slimRows.forEach(function (r) {
+      if (r['Status'] === 'Open') return;
+      var rem = Math.abs(parseNum(r['Remaining']));
+      if (rem <= 0.02) return;
+      var motivo = !r['Status']
+        ? 'Registro sem status definido (' + (r['Invoice #'] === 'Memorized' ? 'Invoice # = Memorized, parece nunca ter sido emitido de fato' : 'status em branco') + '), mas ainda tem saldo de ' + fmtBRL(rem) + ' preso no sistema.'
+        : 'Status "' + r['Status'] + '" (nao deveria ter saldo em aberto), mas ainda tem ' + fmtBRL(rem) + ' de Remaining.';
+      ajustes.push(makeAjuste(r, !r['Status'] ? 'Fatura-modelo (nao emitida)' : 'Status fechado com saldo', motivo));
+    });
+
     var open = slimRows.filter(function (r) { return r['Status'] === 'Open'; });
     var byId = {};
     open.forEach(function (r) {
@@ -813,15 +831,12 @@
       byId[id].push(r);
     });
 
-    var clean = [], ajustes = [];
     Object.keys(byId).forEach(function (id) {
       var group = byId[id];
       group.slice(1).forEach(function (r) { ajustes.push(makeAjuste(r, 'Duplicata', 'Mesma nota (Internal ID ' + id + ') aparece mais de uma vez no arquivo enviado.')); });
       var r = group[0];
-      var invoiceNum = r['Invoice #'];
-      var status = r['Status'];
-      if (invoiceNum === 'Memorized' || !status) {
-        ajustes.push(makeAjuste(r, 'Fatura-modelo (nao emitida)', 'Registro sem status definido / Invoice # = Memorized - parece nunca ter sido emitido de fato.'));
+      if (r['Invoice #'] === 'Memorized') {
+        ajustes.push(makeAjuste(r, 'Fatura-modelo (nao emitida)', 'Invoice # = Memorized, mas está marcada como Open - parece um modelo de fatura recorrente que nunca foi de fato emitido.'));
         return;
       }
       var rem = Math.abs(parseNum(r['Remaining']));
