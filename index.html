@@ -359,7 +359,11 @@
     var valid = rows.filter(function (r) { return !r.error; });
 
     if (valid.length === 0) {
-      card.innerHTML = '<h2>Histórico completo</h2><div class="empty">Nenhum registro histórico encontrado para esse CNPJ (planilhas de histórico podem ainda não estar configuradas).</div>';
+      var msg = 'Nenhum registro histórico encontrado para esse CNPJ (planilhas de histórico podem ainda não estar configuradas).';
+      if (errors.length > 0) {
+        msg = 'Erro ao ler ' + errors.length + ' arquivo(s) de histórico:<br>' + errors.map(function (e) { return escapeHtml(e.error); }).join('<br>');
+      }
+      card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">' + msg + '</div>';
       return;
     }
 
