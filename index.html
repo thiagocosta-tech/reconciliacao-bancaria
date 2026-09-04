@@ -194,13 +194,14 @@
   var APPS_SCRIPT_URL = "https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
   var jsonpCounter = 0;
 
-  function jsonp(params, onData, onTimeout) {
+  function jsonp(params, onData, onTimeout, timeoutMs) {
+    timeoutMs = timeoutMs || 20000;
     jsonpCounter++;
     var cbName = "__cb_" + jsonpCounter + "_" + Date.now();
     var timeoutId = setTimeout(function () {
       delete window[cbName];
       onTimeout && onTimeout();
-    }, 20000);
+    }, timeoutMs);
     window[cbName] = function (data) {
       clearTimeout(timeoutId);
       delete window[cbName];
@@ -211,7 +212,7 @@
     script.src = APPS_SCRIPT_URL + "?" + qs + "&callback=" + cbName;
     script.onerror = function () { clearTimeout(timeoutId); delete window[cbName]; onTimeout && onTimeout(); };
     document.body.appendChild(script);
-    setTimeout(function () { script.remove(); }, 21000);
+    setTimeout(function () { script.remove(); }, timeoutMs + 1000);
   }
 
   function postForm(payload, onDone) {
@@ -348,7 +349,7 @@
     }, function () {
       var card = document.getElementById('historico-card');
       if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
-    });
+    }, 60000);
   }
 
   function renderHistorico(rows) {
