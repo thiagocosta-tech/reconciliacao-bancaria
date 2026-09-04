@@ -604,66 +604,22 @@
   var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
   var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
 
-  document.getElementById('file-input').addEventListener('change', function (evt) {
-    var files = Array.prototype.slice.call(evt.target.files);
-    if (files.length === 0) return;
-    var statusEl = document.getElementById('upload-status');
-    document.getElementById('upload-preview').innerHTML = '';
+  // Guardamos so os campos realmente usados de cada linha (17, nao os 38
+  // originais do export) - descartando de cara URLs/memos longos que nunca
+  // sao usados aqui. Isso e o que evita estourar a memoria do navegador com
+  // 2M+ linhas. 'Customer ID' e mantido so pra montar o mapa de CNPJ Matriz.
+  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
+  var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
-    var allRows = [];
-    var filesDone = 0;
-
-    function readOne(file) {
-      var reader = new FileReader();
-      reader.onload = function (e) {
-        try {
-          var rows;
-          if (file.name.toLowerCase().endsWith('.csv')) {
-            rows = parseCSV(e.target.result);
-          } else {
-            var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: false });
-            var sheet = wb.Sheets[wb.SheetNames[0]];
-            rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-          }
-          allRows = allRows.concat(rows);
-          filesDone++;
-          statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lido ' + filesDone + ' de ' + files.length + ' arquivo(s) (' + allRows.length + ' linhas ate agora)...</div>';
-          if (filesDone === files.length) {
-            statusEl.innerHTML = '<div class="status-msg info">Processando ' + allRows.length + ' linhas de ' + files.length + ' arquivo(s)...</div>';
-            setTimeout(function () { processRows(allRows); }, 30);
-          }
-        } catch (err) {
-          statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler "' + escapeHtml(file.name) + '": ' + escapeHtml(err.message) + '</div>';
-        }
-      };
-      reader.onerror = function () {
-        statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler o arquivo "' + escapeHtml(file.name) + '".</div>';
-      };
-      if (file.name.toLowerCase().endsWith('.csv')) {
-        reader.readAsText(file, 'UTF-8');
-      } else {
-        reader.readAsBinaryString(file);
-      }
-    }
-
-    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo ' + files.length + ' arquivo(s)...</div>';
-    files.forEach(readOne);
-  });
-
-  function parseCSV(text) {
-    var lines = text.split(/\r\n|\n/).filter(function (l) { return l.length > 0; });
-    if (lines.length === 0) return [];
-    var headers = splitCSVLine(lines[0]);
-    var out = [];
-    for (var i = 1; i < lines.length; i++) {
-      var cols = splitCSVLine(lines[i]);
-      var obj = {};
-      headers.forEach(function (h, idx) { obj[h] = cols[idx] !== undefined ? cols[idx] : ''; });
-      out.push(obj);
-    }
+  function slimRow(r) {
+    var out = {};
+    SLIM_FIELDS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
     return out;
   }
-  function splitCSVLine(line) {
+
+  function splitCSVLineFast(line) { return line.split(','); }
+  function splitCSVLineQuoted(line) {
     var result = [];
     var cur = '';
     var inQuotes = false;
@@ -682,6 +638,110 @@
     result.push(cur);
     return result;
   }
+  function splitCSVLineAuto(line) {
+    return line.indexOf('"') === -1 ? splitCSVLineFast(line) : splitCSVLineQuoted(line);
+  }
+
+  // Parser assincrono e em lotes: processa o CSV em pedacos de 15 mil linhas
+  // com um setTimeout(0) entre cada lote, pra nunca travar a aba do navegador
+  // com um bloco sincrono gigante (o que antes causava "pagina nao responde"
+  // e, em arquivos muito grandes, ate erro de falta de memoria).
+  function parseCSVSlimAsync(text, onProgress, onDone) {
+    var lines = text.split(/\r\n|\n/);
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    if (lines.length === 0) { onDone([]); return; }
+
+    var headers = splitCSVLineAuto(lines[0]);
+    var fieldIdx = {};
+    headers.forEach(function (h, i) { fieldIdx[h] = i; });
+    var neededIdx = SLIM_FIELDS.map(function (f) { return fieldIdx[f]; });
+
+    var total = lines.length - 1;
+    var out = [];
+    var i = 1;
+    var BATCH = 15000;
+
+    function step() {
+      var end = Math.min(i + BATCH, lines.length);
+      for (; i < end; i++) {
+        var line = lines[i];
+        if (line === '') continue;
+        var cols = splitCSVLineAuto(line);
+        var rowObj = {};
+        for (var k = 0; k < SLIM_FIELDS.length; k++) {
+          var colIdx = neededIdx[k];
+          rowObj[SLIM_FIELDS[k]] = (colIdx !== undefined && cols[colIdx] !== undefined) ? cols[colIdx] : '';
+        }
+        out.push(rowObj);
+      }
+      onProgress(Math.min(i - 1, total), total);
+      if (i < lines.length) {
+        setTimeout(step, 0);
+      } else {
+        onDone(out);
+      }
+    }
+    setTimeout(step, 0);
+  }
+
+  document.getElementById('file-input').addEventListener('change', function (evt) {
+    var files = Array.prototype.slice.call(evt.target.files);
+    if (files.length === 0) return;
+    var statusEl = document.getElementById('upload-status');
+    document.getElementById('upload-preview').innerHTML = '';
+
+    var allSlimRows = [];
+    var fileIdx = 0;
+
+    // Le e processa um arquivo por vez (nunca 3 ao mesmo tempo) - assim o
+    // navegador nunca precisa segurar 3 arquivos gigantes na memoria juntos.
+    function readNext() {
+      if (fileIdx >= files.length) {
+        statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Processando ' + allSlimRows.length.toLocaleString('pt-BR') + ' linhas de ' + files.length + ' arquivo(s)...</div>';
+        setTimeout(function () { processRows(allSlimRows); }, 30);
+        return;
+      }
+      var file = files[fileIdx];
+      var isCsv = file.name.toLowerCase().endsWith('.csv');
+      var fileLabel = 'arquivo ' + (fileIdx + 1) + ' de ' + files.length + ' ("' + file.name + '")';
+
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          if (isCsv) {
+            parseCSVSlimAsync(e.target.result, function (done, total) {
+              var pct = total ? Math.round((done / total) * 100) : 0;
+              statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo ' + fileLabel + ' — ' + pct + '% (' + done.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' linhas)</div>';
+            }, function (rows) {
+              allSlimRows = allSlimRows.concat(rows);
+              fileIdx++;
+              readNext();
+            });
+          } else {
+            var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: false });
+            var sheet = wb.Sheets[wb.SheetNames[0]];
+            var rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+            allSlimRows = allSlimRows.concat(rawRows.map(slimRow));
+            fileIdx++;
+            readNext();
+          }
+        } catch (err) {
+          statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler "' + escapeHtml(file.name) + '": ' + escapeHtml(err.message) + '</div>';
+        }
+      };
+      reader.onerror = function () {
+        statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler o arquivo "' + escapeHtml(file.name) + '".</div>';
+      };
+      statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo ' + fileLabel + '...</div>';
+      if (isCsv) {
+        reader.readAsText(file, 'UTF-8');
+      } else {
+        reader.readAsBinaryString(file);
+      }
+    }
+
+    readNext();
+  });
 
   function excelSerialToDate(v) {
     if (v === '' || v === null || v === undefined) return '';
@@ -691,24 +751,14 @@
     return date.toISOString().substring(0, 10);
   }
 
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
-  var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
-
-  function historicoRow(r) {
-    var out = {};
-    HISTORICO_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
-    out['Date'] = excelSerialToDate(out['Date']);
-    return out;
-  }
-
   // Uma empresa pode ser subsidiaria de outra (campo "Parent ID" no NetSuite,
   // formato "CUS12345 Nome da Matriz"). Pra permitir buscar pelo CNPJ da
   // matriz e trazer a estrutura toda, resolvemos aqui o proprio CNPJ (Tax ID)
   // de cada cliente-pai, usando o proprio arquivo enviado como fonte —
   // olhando qualquer linha cujo "Customer ID" bata com o prefixo do Parent ID.
-  function buildCustomerIdToTaxIdMap(rawRows) {
+  function buildCustomerIdToTaxIdMap(rows) {
     var map = {};
-    rawRows.forEach(function (r) {
+    rows.forEach(function (r) {
       var custId = r['Customer ID'];
       var taxId = r['Tax ID'];
       if (custId && taxId && !map[custId]) map[custId] = taxId;
@@ -721,17 +771,41 @@
     return String(parentId).split(' ')[0];
   }
 
-  function processRows(rawRows) {
+  // Processa em lotes (com yield ao navegador entre eles) pra nao travar a
+  // aba mesmo com milhoes de linhas. Reaproveita o MESMO array (slimRows)
+  // como base do Histórico completo — nao cria uma copia duplicada so pra
+  // isso, economizando bastante memoria.
+  function processRows(slimRows) {
     var statusEl = document.getElementById('upload-status');
+    if (slimRows.length === 0) { finishProcessing(slimRows); return; }
 
-    var customerIdToTaxId = buildCustomerIdToTaxIdMap(rawRows);
-    rawRows.forEach(function (r) {
-      r['CNPJ Matriz'] = customerIdToTaxId[parentCustomerId(r)] || '';
-    });
+    var customerIdToTaxId = buildCustomerIdToTaxIdMap(slimRows);
+    var total = slimRows.length;
+    var idx = 0;
+    var BATCH = 50000;
 
-    pendingHistorico = rawRows.map(historicoRow);
-    var open = rawRows.filter(function (r) { return r['Status'] === 'Open'; });
+    function step() {
+      var end = Math.min(idx + BATCH, total);
+      for (; idx < end; idx++) {
+        var r = slimRows[idx];
+        r['CNPJ Matriz'] = customerIdToTaxId[parentCustomerId(r)] || '';
+        r['Date'] = excelSerialToDate(r['Date']);
+      }
+      statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Processando linhas — ' + Math.round((idx / total) * 100) + '%...</div>';
+      if (idx < total) {
+        setTimeout(step, 0);
+      } else {
+        finishProcessing(slimRows);
+      }
+    }
+    setTimeout(step, 0);
+  }
 
+  function finishProcessing(slimRows) {
+    var statusEl = document.getElementById('upload-status');
+    pendingHistorico = slimRows;
+
+    var open = slimRows.filter(function (r) { return r['Status'] === 'Open'; });
     var byId = {};
     open.forEach(function (r) {
       var id = r['Internal ID'];
@@ -765,7 +839,7 @@
     document.getElementById('upload-preview').innerHTML =
       '<div class="card"><h2>Prévia</h2>' +
       '<div class="summary-grid">' +
-      summaryBox('Linhas no arquivo', rawRows.length, '') +
+      summaryBox('Linhas no arquivo', slimRows.length, '') +
       summaryBox('Notas limpas (Notas)', clean.length, '') +
       summaryBox('Ajustes separados', ajustes.length, 'warn') +
       summaryBox('Histórico completo', pendingHistorico.length, '') +
@@ -780,7 +854,6 @@
   function cleanRow(r) {
     var out = {};
     CLEAN_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
-    out['Date'] = excelSerialToDate(out['Date']);
     out['Due Date'] = excelSerialToDate(out['Due Date']);
     out['New Due Date'] = excelSerialToDate(out['New Due Date']);
     return out;
