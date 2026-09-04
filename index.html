@@ -220,6 +220,19 @@
   }
 
   function postForm(payload, onDone) {
+    // Espera o evento 'load' do iframe oculto (sinal real de que o POST
+    // terminou de ida e volta), em vez de assumir um tempo fixo - payloads
+    // grandes (ate 40-50MB apos url-encoding) podem levar bem mais que
+    // 1.5s pra ir e voltar, principalmente em conexao mais lenta.
+    var frame = document.querySelector('iframe[name="hidden_upload_frame"]');
+    var done = false;
+    function finish() {
+      if (done) return;
+      done = true;
+      frame.removeEventListener('load', finish);
+      form.remove();
+      onDone && onDone();
+    }
     var form = document.createElement('form');
     form.method = 'POST';
     form.action = APPS_SCRIPT_URL;
@@ -231,8 +244,9 @@
     input.value = JSON.stringify(payload);
     form.appendChild(input);
     document.body.appendChild(form);
+    frame.addEventListener('load', finish);
+    setTimeout(finish, 120000); // seguranca: nunca trava pra sempre se o load nao disparar
     form.submit();
-    setTimeout(function () { form.remove(); onDone && onDone(); }, 1500);
   }
 
   function parseNum(v) {
@@ -618,8 +632,19 @@
     return out;
   }
 
-  function splitCSVLineFast(line) { return line.split(','); }
-  function splitCSVLineQuoted(line) {
+  // O Excel em Windows configurado em portugues do Brasil às vezes salva
+  // "CSV" usando ponto e virgula como separador (porque a virgula ja e usada
+  // pra separar decimais no formato brasileiro), em vez de virgula de
+  // verdade. Detectamos isso olhando o cabecalho antes de processar o
+  // arquivo inteiro, pra funcionar independente de qual separador o Excel
+  // decidiu usar.
+  function detectDelimiter(headerLine) {
+    var commaCount = (headerLine.match(/,/g) || []).length;
+    var semicolonCount = (headerLine.match(/;/g) || []).length;
+    return semicolonCount > commaCount ? ';' : ',';
+  }
+  function splitCSVLineFast(line, delim) { return line.split(delim); }
+  function splitCSVLineQuoted(line, delim) {
     var result = [];
     var cur = '';
     var inQuotes = false;
@@ -631,15 +656,15 @@
         } else { cur += c; }
       } else {
         if (c === '"') inQuotes = true;
-        else if (c === ',') { result.push(cur); cur = ''; }
+        else if (c === delim) { result.push(cur); cur = ''; }
         else cur += c;
       }
     }
     result.push(cur);
     return result;
   }
-  function splitCSVLineAuto(line) {
-    return line.indexOf('"') === -1 ? splitCSVLineFast(line) : splitCSVLineQuoted(line);
+  function splitCSVLineAuto(line, delim) {
+    return line.indexOf('"') === -1 ? splitCSVLineFast(line, delim) : splitCSVLineQuoted(line, delim);
   }
 
   // Parser assincrono e em lotes: processa o CSV em pedacos de 15 mil linhas
@@ -651,9 +676,10 @@
     while (lines.length && lines[lines.length - 1] === '') lines.pop();
     if (lines.length === 0) { onDone([]); return; }
 
-    var headers = splitCSVLineAuto(lines[0]);
+    var delim = detectDelimiter(lines[0]);
+    var headers = splitCSVLineAuto(lines[0], delim);
     var fieldIdx = {};
-    headers.forEach(function (h, i) { fieldIdx[h] = i; });
+    headers.forEach(function (h, i) { fieldIdx[h.trim()] = i; });
     var neededIdx = SLIM_FIELDS.map(function (f) { return fieldIdx[f]; });
 
     var total = lines.length - 1;
@@ -666,7 +692,7 @@
       for (; i < end; i++) {
         var line = lines[i];
         if (line === '') continue;
-        var cols = splitCSVLineAuto(line);
+        var cols = splitCSVLineAuto(line, delim);
         var rowObj = {};
         for (var k = 0; k < SLIM_FIELDS.length; k++) {
           var colIdx = neededIdx[k];
@@ -950,7 +976,12 @@
     }
 
     function enviarHistorico() {
-      var HIST_CHUNK_SIZE = 300000;
+      // Chunk bem menor que o limite de leitura do Drive (~50MB): o POST
+      // codifica o CSV inteiro na URL do formulario (url-encoding infla
+      // bastante o tamanho, ja que virgulas/aspas/quebras de linha viram
+      // %2C/%22/%0A), entao o payload real enviado e bem maior que o
+      // texto puro - por isso o chunk aqui e bem mais conservador.
+      var HIST_CHUNK_SIZE = 40000;
       var totalChunks = Math.max(1, Math.ceil(pendingHistorico.length / HIST_CHUNK_SIZE));
 
       function sendChunk(i) {
