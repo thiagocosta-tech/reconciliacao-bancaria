@@ -9,14 +9,14 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
-    --paper: #f4f1ea;
+    --paper: #faf6f8;
     --paper-raised: #ffffff;
-    --paper-sunk: #ebe6db;
-    --ink: #201c14;
-    --ink-soft: #6b6252;
-    --line: #ddd5c2;
-    --accent: #b07a2e;
-    --accent-soft: #b07a2e1a;
+    --paper-sunk: #f1e7ec;
+    --ink: #24121c;
+    --ink-soft: #7d6570;
+    --line: #e3d3db;
+    --accent: #620032;
+    --accent-soft: #6200321a;
     --ok: #2e6b46;
     --ok-bg: #2e6b461a;
     --bad: #a23f3f;
@@ -27,14 +27,14 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --paper: #1c1a15;
-      --paper-raised: #26231c;
-      --paper-sunk: #15130f;
-      --ink: #ede7d9;
-      --ink-soft: #a89d86;
-      --line: #3a352a;
-      --accent: #d4a24f;
-      --accent-soft: #d4a24f22;
+      --paper: #1b1216;
+      --paper-raised: #251720;
+      --paper-sunk: #140c11;
+      --ink: #f1e6ec;
+      --ink-soft: #ac93a1;
+      --line: #3c2a34;
+      --accent: #e187b5;
+      --accent-soft: #e187b522;
       --ok: #6fbd8c;
       --ok-bg: #6fbd8c22;
       --bad: #d98080;
@@ -45,14 +45,14 @@
     }
   }
   :root[data-theme="dark"] {
-    --paper: #1c1a15;
-    --paper-raised: #26231c;
-    --paper-sunk: #15130f;
-    --ink: #ede7d9;
-    --ink-soft: #a89d86;
-    --line: #3a352a;
-    --accent: #d4a24f;
-    --accent-soft: #d4a24f22;
+    --paper: #1b1216;
+    --paper-raised: #251720;
+    --paper-sunk: #140c11;
+    --ink: #f1e6ec;
+    --ink-soft: #ac93a1;
+    --line: #3c2a34;
+    --accent: #e187b5;
+    --accent-soft: #e187b522;
     --ok: #6fbd8c;
     --ok-bg: #6fbd8c22;
     --bad: #d98080;
@@ -64,8 +64,9 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Public Sans', system-ui, sans-serif; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
-  header.top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.4rem; }
-  .brand { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; }
+  header.top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.4rem; }
+  .brand { display: flex; align-items: center; gap: 0.55rem; font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .brand img { width: 26px; height: 26px; display: block; }
   .brand span { color: var(--accent); }
   h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
   .sub { color: var(--ink-soft); font-size: 0.95rem; margin: 0 0 1.8rem; }
@@ -134,7 +135,7 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand">Well<span>hub</span> · SBS Collection</div>
+    <div class="brand"><img src="wellhub-logo.png" alt="Wellhub"> Wellhub · SBS Collection</div>
   </header>
   <h1>Reconciliação Bancária</h1>
   <p class="sub">Consulta por CNPJ, saldo real em aberto e ajustes que precisam de revisão.</p>
