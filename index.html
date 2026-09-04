@@ -280,7 +280,7 @@
     jsonp({ sheet: 'Notas', filterField: 'Tax ID', filterValue: cnpj }, function (notasData) {
       jsonp({ sheet: 'Ajustes', filterField: 'Tax ID', filterValue: cnpj }, function (ajustesData) {
         statusEl.innerHTML = '';
-        renderResultado(notasData.rows || [], ajustesData.rows || []);
+        renderResultado(notasData.rows || [], ajustesData.rows || [], cnpj);
       }, function () {
         statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel carregar os ajustes (timeout). Tente de novo.</div>';
       });
@@ -289,10 +289,12 @@
     });
   });
 
-  function renderResultado(notas, ajustes) {
+  function renderResultado(notas, ajustes, cnpj) {
     var resultEl = document.getElementById('resultado-area');
     if (notas.length === 0 && ajustes.length === 0) {
-      resultEl.innerHTML = '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse CNPJ.</div></div>';
+      resultEl.innerHTML = '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse CNPJ.</div></div>' +
+        '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
+      loadHistorico(cnpj);
       return;
     }
 
@@ -329,11 +331,54 @@
       html += '</div>';
     }
 
+    html += '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
+
     resultEl.innerHTML = html;
 
     ajustes.forEach(function (a, idx) {
       wireAjusteButtons(a, idx);
     });
+
+    loadHistorico(cnpj);
+  }
+
+  function loadHistorico(cnpj) {
+    jsonp({ sheet: 'Historico', filterField: 'Tax ID', filterValue: cnpj }, function (data) {
+      renderHistorico(data.rows || data || []);
+    }, function () {
+      var card = document.getElementById('historico-card');
+      if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
+    });
+  }
+
+  function renderHistorico(rows) {
+    var card = document.getElementById('historico-card');
+    if (!card) return;
+    var errors = rows.filter(function (r) { return r.error; });
+    var valid = rows.filter(function (r) { return !r.error; });
+
+    if (valid.length === 0) {
+      card.innerHTML = '<h2>Histórico completo</h2><div class="empty">Nenhum registro histórico encontrado para esse CNPJ (planilhas de histórico podem ainda não estar configuradas).</div>';
+      return;
+    }
+
+    valid.sort(function (a, b) { return String(a['Date']).localeCompare(String(b['Date'])); });
+
+    var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)</h2>';
+    html += '<p class="hint">Use isso pra conferir se o que está marcado como fechado (Paid In Full, Deposited, Fully Applied) realmente está com saldo zerado.</p>';
+    html += '<div class="table-scroll"><table><thead><tr><th>Invoice #</th><th>Tipo</th><th>Data</th><th>Status</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
+    valid.forEach(function (r) {
+      var rem = parseNum(r['Remaining']);
+      var statusCls = r['Status'] === 'Open' ? 'warn' : (Math.abs(rem) > 0.02 ? 'bad' : '');
+      html += '<tr><td>' + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td><td>' + escapeHtml(r['Date']) + '</td>' +
+        '<td>' + escapeHtml(r['Status']) + '</td><td class="num">' + fmtBRL(parseNum(r['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(r['Paid'])) + '</td>' +
+        '<td class="num ' + statusCls + '">' + fmtBRL(rem) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    if (errors.length > 0) {
+      html += '<div class="status-msg bad">Aviso: ' + errors.length + ' planilha(s) de histórico não puderam ser lidas.</div>';
+    }
+    card.innerHTML = html;
   }
 
   function summaryBox(label, value, cls) {
