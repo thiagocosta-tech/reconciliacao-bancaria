@@ -290,8 +290,37 @@
     });
   });
 
+  var currentNotas = [];
+  var currentHistorico = [];
+  var currentCnpj = '';
+
+  function downloadCSV(rows, columns, filename) {
+    if (!rows || rows.length === 0) { alert('Nada pra baixar ainda.'); return; }
+    var csvEscape = function (v) {
+      var s = String(v == null ? '' : v);
+      if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    };
+    var lines = [columns.map(csvEscape).join(',')];
+    rows.forEach(function (r) {
+      lines.push(columns.map(function (c) { return csvEscape(r[c]); }).join(','));
+    });
+    var csvContent = lines.join('\r\n');
+    var blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+
   function renderResultado(notas, ajustes, cnpj) {
     var resultEl = document.getElementById('resultado-area');
+    currentNotas = notas;
+    currentCnpj = cnpj;
     if (notas.length === 0 && ajustes.length === 0) {
       resultEl.innerHTML = '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse CNPJ.</div></div>' +
         '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
@@ -320,6 +349,7 @@
           '<td class="num">' + fmtBRL(parseNum(n['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Paid'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Remaining'])) + '</td></tr>';
       });
       html += '</tbody></table></div>';
+      html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-notas">Baixar notas em aberto (CSV)</button></div>';
     }
     html += '</div>';
 
@@ -339,6 +369,15 @@
     ajustes.forEach(function (a, idx) {
       wireAjusteButtons(a, idx);
     });
+
+    var btnBaixarNotas = document.getElementById('btn-baixar-notas');
+    if (btnBaixarNotas) {
+      btnBaixarNotas.addEventListener('click', function () {
+        downloadCSV(currentNotas,
+          ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          'notas_abertas_' + cnpj + '.csv');
+      });
+    }
 
     loadHistorico(cnpj);
   }
@@ -380,10 +419,21 @@
         '<td class="num ' + statusCls + '">' + fmtBRL(rem) + '</td></tr>';
     });
     html += '</tbody></table></div>';
+    html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-historico">Baixar histórico completo (CSV)</button></div>';
     if (errors.length > 0) {
       html += '<div class="status-msg bad">Aviso: ' + errors.length + ' planilha(s) de histórico não puderam ser lidas.</div>';
     }
     card.innerHTML = html;
+
+    currentHistorico = valid;
+    var btnBaixarHist = document.getElementById('btn-baixar-historico');
+    if (btnBaixarHist) {
+      btnBaixarHist.addEventListener('click', function () {
+        downloadCSV(currentHistorico,
+          ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          'historico_completo_' + currentCnpj + '.csv');
+      });
+    }
   }
 
   function summaryBox(label, value, cls) {
