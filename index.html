@@ -554,24 +554,67 @@
     return out;
   }
 
+  function waitForRowCount(sheetName, expectedCount, statusEl, label, onConfirmed, onGaveUp, attempt) {
+    attempt = attempt || 1;
+    var MAX_ATTEMPTS = 24; // ~2 minutes at 5s each
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Confirmando "' + label + '" (tentativa ' + attempt + ')...</div>';
+    jsonp({ sheet: sheetName }, function (data) {
+      var count = (data.rows || []).length;
+      if (count === expectedCount) {
+        onConfirmed();
+      } else if (attempt >= MAX_ATTEMPTS) {
+        onGaveUp(count);
+      } else {
+        setTimeout(function () {
+          waitForRowCount(sheetName, expectedCount, statusEl, label, onConfirmed, onGaveUp, attempt + 1);
+        }, 5000);
+      }
+    }, function () {
+      if (attempt >= MAX_ATTEMPTS) {
+        onGaveUp(null);
+      } else {
+        setTimeout(function () {
+          waitForRowCount(sheetName, expectedCount, statusEl, label, onConfirmed, onGaveUp, attempt + 1);
+        }, 5000);
+      }
+    });
+  }
+
   function confirmUpload() {
     var statusEl = document.getElementById('confirm-status');
     var autor = document.getElementById('autor-input').value.trim() || '(nao informado)';
+    var btn = document.getElementById('btn-confirmar-upload');
+    btn.disabled = true;
+
     statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando "Notas" (' + pendingClean.length + ' linhas)...</div>';
 
     postForm({ action: 'replace', sheet: 'Notas', headers: CLEAN_COLUMNS, rows: pendingClean }, function () {
+      waitForRowCount('Notas', pendingClean.length, statusEl, 'Notas', function () {
+        enviarAjustes();
+      }, function (gotCount) {
+        statusEl.innerHTML = '<div class="status-msg bad">Não consegui confirmar que "Notas" terminou de gravar (esperava ' + pendingClean.length +
+          ' linhas' + (gotCount === null ? '' : ', encontrei ' + gotCount) + '). Espere um pouco e recarregue a página pra conferir a aba "Consulta por CNPJ" antes de tentar de novo — não prossegui para "Ajustes" por segurança.</div>';
+        btn.disabled = false;
+      });
+    });
+
+    function enviarAjustes() {
       statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando "Ajustes" (' + pendingAjustes.length + ' linhas)...</div>';
-      setTimeout(function () {
-        postForm({ action: 'replace', sheet: 'Ajustes', headers: AJUSTE_COLUMNS, rows: pendingAjustes }, function () {
+      postForm({ action: 'replace', sheet: 'Ajustes', headers: AJUSTE_COLUMNS, rows: pendingAjustes }, function () {
+        waitForRowCount('Ajustes', pendingAjustes.length, statusEl, 'Ajustes', function () {
           var meta = [{ 'Chave': 'UltimaAtualizacao', 'Valor': new Date().toLocaleString('pt-BR') + ' por ' + autor }];
           jsonp({ action: 'write', sheet: 'Meta', writeAction: 'upsert', keyField: 'Chave', rows: JSON.stringify(meta) }, function () {
-            statusEl.innerHTML = '<div class="status-msg ok">Atualização concluída! A aba "Consulta por CNPJ" já está usando os dados novos.</div>';
+            statusEl.innerHTML = '<div class="status-msg ok">Atualização concluída e confirmada! A aba "Consulta por CNPJ" já está usando os dados novos.</div>';
           }, function () {
-            statusEl.innerHTML = '<div class="status-msg ok">Dados atualizados (não foi possível confirmar a data de atualização, mas os dados foram enviados).</div>';
+            statusEl.innerHTML = '<div class="status-msg ok">Notas e Ajustes confirmados (não foi possível registrar a data de atualização, mas os dados principais foram gravados e conferidos).</div>';
           });
+        }, function (gotCount) {
+          statusEl.innerHTML = '<div class="status-msg bad">"Notas" foi confirmado, mas não consegui confirmar "Ajustes" (esperava ' + pendingAjustes.length +
+            ' linhas' + (gotCount === null ? '' : ', encontrei ' + gotCount) + '). Recarregue a página e confira a aba "Ajustes" na planilha antes de tentar de novo.</div>';
+          btn.disabled = false;
         });
-      }, 2000);
-    });
+      });
+    }
   }
 </script>
 </body>
