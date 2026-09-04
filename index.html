@@ -267,6 +267,38 @@
   });
 
   // ---------- TAB 1: busca ----------
+  // Uma empresa pode ter CNPJ proprio (Tax ID) e, se for uma subsidiaria,
+  // um "CNPJ Matriz" (o CNPJ do cliente-pai no NetSuite). Buscar por um CNPJ
+  // individual traz so aquela empresa; buscar pelo CNPJ da matriz traz a
+  // estrutura toda (matriz + todas as subsidiarias apontando pra ela).
+  function fetchByEitherField(sheetName, cnpj, onData, onTimeout, timeoutMs) {
+    var results = null, gotError = false, pending = 2;
+    var byTax = null, byMatriz = null;
+
+    function done() {
+      pending--;
+      if (gotError) return;
+      if (pending === 0) {
+        var merged = {};
+        (byTax || []).concat(byMatriz || []).forEach(function (r) {
+          var key = r['Internal ID'] || JSON.stringify(r);
+          merged[key] = r;
+        });
+        onData(Object.keys(merged).map(function (k) { return merged[k]; }));
+      }
+    }
+
+    jsonp({ sheet: sheetName, filterField: 'Tax ID', filterValue: cnpj }, function (data) {
+      byTax = data.rows || data || [];
+      done();
+    }, function () { gotError = true; onTimeout(); }, timeoutMs);
+
+    jsonp({ sheet: sheetName, filterField: 'CNPJ Matriz', filterValue: cnpj }, function (data) {
+      byMatriz = data.rows || data || [];
+      done();
+    }, function () { gotError = true; onTimeout(); }, timeoutMs);
+  }
+
   document.getElementById('btn-buscar').addEventListener('click', function () {
     var cnpjRaw = document.getElementById('cnpj-input').value.trim();
     var cnpj = normCNPJ(cnpjRaw);
@@ -279,10 +311,10 @@
     statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Buscando...</div>';
     resultEl.innerHTML = '';
 
-    jsonp({ sheet: 'Notas', filterField: 'Tax ID', filterValue: cnpj }, function (notasData) {
-      jsonp({ sheet: 'Ajustes', filterField: 'Tax ID', filterValue: cnpj }, function (ajustesData) {
+    fetchByEitherField('Notas', cnpj, function (notasRows) {
+      fetchByEitherField('Ajustes', cnpj, function (ajustesRows) {
         statusEl.innerHTML = '';
-        renderResultado(notasData.rows || [], ajustesData.rows || [], cnpj);
+        renderResultado(notasRows, ajustesRows, cnpj);
       }, function () {
         statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel carregar os ajustes (timeout). Tente de novo.</div>';
       });
@@ -324,8 +356,23 @@
     var totalPaid = notas.reduce(function (s, n) { return s + parseNum(n['Paid']); }, 0);
     var empresa = (notas[0] && notas[0]['Company']) || (ajustes[0] && ajustes[0]['Company']) || '(nome nao encontrado)';
 
+    var distinctCompanies = {};
+    notas.concat(ajustes).forEach(function (r) {
+      var tid = r['Tax ID'];
+      if (tid) distinctCompanies[tid] = r['Company'] || tid;
+    });
+    var companyNames = Object.keys(distinctCompanies).map(function (k) { return distinctCompanies[k]; });
+    var isGroup = companyNames.length > 1;
+
     var html = '';
-    html += '<div class="card"><h2>' + escapeHtml(empresa) + '</h2>';
+    html += '<div class="card">';
+    if (isGroup) {
+      html += '<h2>Grupo — ' + companyNames.length + ' empresas na estrutura</h2>';
+      html += '<p class="hint">Esse CNPJ é uma matriz — o resultado abaixo junta ela e todas as subsidiárias que apontam pra ela: ' +
+        companyNames.map(escapeHtml).join(', ') + '.</p>';
+    } else {
+      html += '<h2>' + escapeHtml(empresa) + '</h2>';
+    }
     html += '<div class="summary-grid">';
     html += summaryBox('Notas em aberto', notas.length, '');
     html += summaryBox('Total cobrado', fmtBRL(totalBilled), '');
@@ -334,9 +381,11 @@
     html += '</div>';
 
     if (notas.length > 0) {
-      html += '<div class="table-scroll"><table><thead><tr><th>Invoice #</th><th>Tipo</th><th>Data</th><th>Vencimento</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
+      html += '<div class="table-scroll"><table><thead><tr>' + (isGroup ? '<th>Empresa</th>' : '') +
+        '<th>Invoice #</th><th>Tipo</th><th>Data</th><th>Vencimento</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
       notas.forEach(function (n) {
-        html += '<tr><td>' + escapeHtml(n['Invoice #']) + '</td><td>' + escapeHtml(n['Transaction']) + '</td><td>' + escapeHtml(n['Date']) + '</td><td>' + escapeHtml(n['Due Date']) + '</td>' +
+        html += '<tr>' + (isGroup ? '<td>' + escapeHtml(n['Company']) + '</td>' : '') +
+          '<td>' + escapeHtml(n['Invoice #']) + '</td><td>' + escapeHtml(n['Transaction']) + '</td><td>' + escapeHtml(n['Date']) + '</td><td>' + escapeHtml(n['Due Date']) + '</td>' +
           '<td class="num">' + fmtBRL(parseNum(n['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Paid'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Remaining'])) + '</td></tr>';
       });
       html += '</tbody></table></div>';
@@ -365,7 +414,7 @@
     if (btnBaixarNotas) {
       btnBaixarNotas.addEventListener('click', function () {
         downloadCSV(currentNotas,
-          ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
           'notas_abertas_' + cnpj);
       });
     }
@@ -374,8 +423,8 @@
   }
 
   function loadHistorico(cnpj) {
-    jsonp({ sheet: 'Historico', filterField: 'Tax ID', filterValue: cnpj }, function (data) {
-      renderHistorico(data.rows || data || []);
+    fetchByEitherField('Historico', cnpj, function (rows) {
+      renderHistorico(rows);
     }, function () {
       var card = document.getElementById('historico-card');
       if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
@@ -399,13 +448,19 @@
 
     valid.sort(function (a, b) { return String(a['Date']).localeCompare(String(b['Date'])); });
 
-    var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)</h2>';
+    var distinctCompanies = {};
+    valid.forEach(function (r) { if (r['Tax ID']) distinctCompanies[r['Tax ID']] = true; });
+    var isGroup = Object.keys(distinctCompanies).length > 1;
+
+    var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (isGroup ? ', grupo de ' + Object.keys(distinctCompanies).length + ' empresas' : '') + '</h2>';
     html += '<p class="hint">Use isso pra conferir se o que está marcado como fechado (Paid In Full, Deposited, Fully Applied) realmente está com saldo zerado.</p>';
-    html += '<div class="table-scroll"><table><thead><tr><th>Invoice #</th><th>Tipo</th><th>Data</th><th>Status</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
+    html += '<div class="table-scroll"><table><thead><tr>' + (isGroup ? '<th>Empresa</th>' : '') +
+      '<th>Invoice #</th><th>Tipo</th><th>Data</th><th>Status</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
     valid.forEach(function (r) {
       var rem = parseNum(r['Remaining']);
       var statusCls = r['Status'] === 'Open' ? 'warn' : (Math.abs(rem) > 0.02 ? 'bad' : '');
-      html += '<tr><td>' + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td><td>' + escapeHtml(r['Date']) + '</td>' +
+      html += '<tr>' + (isGroup ? '<td>' + escapeHtml(r['Company']) + '</td>' : '') +
+        '<td>' + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td><td>' + escapeHtml(r['Date']) + '</td>' +
         '<td>' + escapeHtml(r['Status']) + '</td><td class="num">' + fmtBRL(parseNum(r['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(r['Paid'])) + '</td>' +
         '<td class="num ' + statusCls + '">' + fmtBRL(rem) + '</td></tr>';
     });
@@ -421,7 +476,7 @@
     if (btnBaixarHist) {
       btnBaixarHist.addEventListener('click', function () {
         downloadCSV(currentHistorico,
-          ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
           'historico_completo_' + currentCnpj);
       });
     }
@@ -490,8 +545,8 @@
   }
 
   // ---------- TAB 2: atualizar dados ----------
-  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
-  var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
+  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
+  var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
 
   document.getElementById('file-input').addEventListener('change', function (evt) {
     var files = Array.prototype.slice.call(evt.target.files);
@@ -580,7 +635,7 @@
     return date.toISOString().substring(0, 10);
   }
 
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
   function historicoRow(r) {
@@ -590,8 +645,34 @@
     return out;
   }
 
+  // Uma empresa pode ser subsidiaria de outra (campo "Parent ID" no NetSuite,
+  // formato "CUS12345 Nome da Matriz"). Pra permitir buscar pelo CNPJ da
+  // matriz e trazer a estrutura toda, resolvemos aqui o proprio CNPJ (Tax ID)
+  // de cada cliente-pai, usando o proprio arquivo enviado como fonte —
+  // olhando qualquer linha cujo "Customer ID" bata com o prefixo do Parent ID.
+  function buildCustomerIdToTaxIdMap(rawRows) {
+    var map = {};
+    rawRows.forEach(function (r) {
+      var custId = r['Customer ID'];
+      var taxId = r['Tax ID'];
+      if (custId && taxId && !map[custId]) map[custId] = taxId;
+    });
+    return map;
+  }
+  function parentCustomerId(row) {
+    var parentId = row['Parent ID'];
+    if (!parentId) return '';
+    return String(parentId).split(' ')[0];
+  }
+
   function processRows(rawRows) {
     var statusEl = document.getElementById('upload-status');
+
+    var customerIdToTaxId = buildCustomerIdToTaxIdMap(rawRows);
+    rawRows.forEach(function (r) {
+      r['CNPJ Matriz'] = customerIdToTaxId[parentCustomerId(r)] || '';
+    });
+
     pendingHistorico = rawRows.map(historicoRow);
     var open = rawRows.filter(function (r) { return r['Status'] === 'Open'; });
 
