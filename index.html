@@ -173,10 +173,11 @@
       <h2>Atualizar base de dados</h2>
       <p class="hint">
         Envie aqui os <strong>3 arquivos juntos</strong> (mesmo relatório "AllAR" de sempre — 2016 até 2022, 2023 até 2024,
-        e 2025 até 2026 — em .csv ou .xlsx; selecione os 3 de uma vez na janela de upload). A ferramenta combina os 3,
+        e 2025 até 2026 — em .csv; selecione os 3 de uma vez na janela de upload). A ferramenta combina os 3,
         filtra automaticamente só o que está "Open" (em aberto), remove notas duplicadas, separa faturas-modelo e saldos
-        residuais de centavos (ajustes) antes de substituir a base. Recomendado atualizar 1-2x por semana.
-        Prefira .csv se puder exportar assim — arquivos .xlsx grandes podem deixar o navegador lento.
+        residuais de centavos (ajustes) antes de substituir a base — e também atualiza sozinha o "Histórico completo"
+        usado na busca por CNPJ. Recomendado atualizar 1-2x por semana. O envio do histórico completo é a parte mais
+        demorada (pode levar vários minutos) porque é bem maior — não feche a aba enquanto o status não disser "concluída".
       </p>
       <div class="field">
         <label for="file-input">Arquivos (os 3 juntos: 2016-2022, 2023-2024, 2025-2026 — .csv ou .xlsx)</label>
@@ -579,10 +580,19 @@
     return date.toISOString().substring(0, 10);
   }
 
-  var pendingClean = null, pendingAjustes = null;
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
+  var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
+
+  function historicoRow(r) {
+    var out = {};
+    HISTORICO_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
+    out['Date'] = excelSerialToDate(out['Date']);
+    return out;
+  }
 
   function processRows(rawRows) {
     var statusEl = document.getElementById('upload-status');
+    pendingHistorico = rawRows.map(historicoRow);
     var open = rawRows.filter(function (r) { return r['Status'] === 'Open'; });
 
     var byId = {};
@@ -621,8 +631,9 @@
       summaryBox('Linhas no arquivo', rawRows.length, '') +
       summaryBox('Notas limpas (Notas)', clean.length, '') +
       summaryBox('Ajustes separados', ajustes.length, 'warn') +
+      summaryBox('Histórico completo', pendingHistorico.length, '') +
       '</div>' +
-      '<p class="hint">Isso vai <strong>substituir completamente</strong> o conteúdo atual das abas "Notas" e "Ajustes" na planilha. Confira os números acima antes de confirmar.</p>' +
+      '<p class="hint">Isso vai <strong>substituir completamente</strong> o conteúdo atual das abas "Notas" e "Ajustes", e também o histórico completo (usado na busca por CNPJ). Confira os números acima antes de confirmar. O envio do histórico completo pode levar alguns minutos, por ser bem maior.</p>' +
       '<button class="primary" id="btn-confirmar-upload">Confirmar atualização</button>' +
       '<div id="confirm-status"></div></div>';
 
@@ -693,18 +704,80 @@
       statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando "Ajustes" (' + pendingAjustes.length + ' linhas)...</div>';
       postForm({ action: 'replace', sheet: 'Ajustes', headers: AJUSTE_COLUMNS, rows: pendingAjustes }, function () {
         waitForRowCount('Ajustes', pendingAjustes.length, statusEl, 'Ajustes', function () {
-          var meta = [{ 'Chave': 'UltimaAtualizacao', 'Valor': new Date().toLocaleString('pt-BR') + ' por ' + autor }];
-          jsonp({ action: 'write', sheet: 'Meta', writeAction: 'upsert', keyField: 'Chave', rows: JSON.stringify(meta) }, function () {
-            statusEl.innerHTML = '<div class="status-msg ok">Atualização concluída e confirmada! A aba "Consulta por CNPJ" já está usando os dados novos.</div>';
-          }, function () {
-            statusEl.innerHTML = '<div class="status-msg ok">Notas e Ajustes confirmados (não foi possível registrar a data de atualização, mas os dados principais foram gravados e conferidos).</div>';
-          });
+          enviarHistorico();
         }, function (gotCount) {
           statusEl.innerHTML = '<div class="status-msg bad">"Notas" foi confirmado, mas não consegui confirmar "Ajustes" (esperava ' + pendingAjustes.length +
             ' linhas' + (gotCount === null ? '' : ', encontrei ' + gotCount) + '). Recarregue a página e confira a aba "Ajustes" na planilha antes de tentar de novo.</div>';
           btn.disabled = false;
         });
       });
+    }
+
+    function csvFromRows(rows, columns) {
+      var esc = function (v) {
+        var s = String(v == null ? '' : v);
+        if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      };
+      var lines = [columns.map(esc).join(',')];
+      rows.forEach(function (r) { lines.push(columns.map(function (c) { return esc(r[c]); }).join(',')); });
+      return lines.join('\r\n');
+    }
+
+    function enviarHistorico() {
+      var HIST_CHUNK_SIZE = 300000;
+      var totalChunks = Math.max(1, Math.ceil(pendingHistorico.length / HIST_CHUNK_SIZE));
+
+      function sendChunk(i) {
+        if (i > totalChunks) {
+          finalizeHistorico();
+          return;
+        }
+        statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Enviando histórico completo — pedaço ' + i + ' de ' + totalChunks + '...</div>';
+        var startIdx = (i - 1) * HIST_CHUNK_SIZE;
+        var chunkRows = pendingHistorico.slice(startIdx, startIdx + HIST_CHUNK_SIZE);
+        var csvText = csvFromRows(chunkRows, HISTORICO_COLUMNS);
+        postForm({ action: 'replaceHistoricoChunk', index: i, totalChunks: totalChunks, csvText: csvText }, function () {
+          waitForChunkRowCount(i, chunkRows.length, function () {
+            sendChunk(i + 1);
+          }, function (gotCount) {
+            statusEl.innerHTML = '<div class="status-msg bad">Notas e Ajustes foram confirmados, mas o pedaço ' + i + ' de ' + totalChunks +
+              ' do histórico completo não pôde ser confirmado (esperava ' + chunkRows.length + ' linhas' + (gotCount === null ? '' : ', encontrei ' + gotCount) +
+              '). Recarregue a página e tente atualizar de novo — os dados principais (Notas/Ajustes) já estão salvos.</div>';
+            btn.disabled = false;
+          });
+        });
+      }
+
+      function waitForChunkRowCount(index, expectedCount, onConfirmed, onGaveUp, attempt) {
+        attempt = attempt || 1;
+        var MAX_ATTEMPTS = 24;
+        jsonp({ action: 'checkHistoricoChunk', index: index }, function (data) {
+          if (data.rowCount === expectedCount) {
+            onConfirmed();
+          } else if (attempt >= MAX_ATTEMPTS) {
+            onGaveUp(data.rowCount);
+          } else {
+            setTimeout(function () { waitForChunkRowCount(index, expectedCount, onConfirmed, onGaveUp, attempt + 1); }, 5000);
+          }
+        }, function () {
+          if (attempt >= MAX_ATTEMPTS) { onGaveUp(null); }
+          else { setTimeout(function () { waitForChunkRowCount(index, expectedCount, onConfirmed, onGaveUp, attempt + 1); }, 5000); }
+        }, 30000);
+      }
+
+      function finalizeHistorico() {
+        postForm({ action: 'finalizeHistorico', totalChunks: totalChunks }, function () {
+          var meta = [{ 'Chave': 'UltimaAtualizacao', 'Valor': new Date().toLocaleString('pt-BR') + ' por ' + autor }];
+          jsonp({ action: 'write', sheet: 'Meta', writeAction: 'upsert', keyField: 'Chave', rows: JSON.stringify(meta) }, function () {
+            statusEl.innerHTML = '<div class="status-msg ok">Atualização concluída e confirmada! Notas, Ajustes e Histórico completo já estão com os dados novos.</div>';
+          }, function () {
+            statusEl.innerHTML = '<div class="status-msg ok">Notas, Ajustes e Histórico completo confirmados (não foi possível registrar a data de atualização, mas os dados foram gravados).</div>';
+          });
+        });
+      }
+
+      sendChunk(1);
     }
   }
 </script>
