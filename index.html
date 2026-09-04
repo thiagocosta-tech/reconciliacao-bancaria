@@ -171,13 +171,15 @@
     <div class="card">
       <h2>Atualizar base de dados</h2>
       <p class="hint">
-        Envie aqui o arquivo exportado do NetSuite (mesmo relatório "AllAR" de sempre, em .csv ou .xlsx). A ferramenta filtra
-        automaticamente só o que está "Open" (em aberto), remove notas duplicadas, separa faturas-modelo e saldos residuais
-        de centavos (ajustes) antes de atualizar a planilha. Recomendado atualizar 1-2x por semana.
+        Envie aqui os <strong>3 arquivos juntos</strong> (mesmo relatório "AllAR" de sempre — 2016 até 2022, 2023 até 2024,
+        e 2025 até 2026 — em .csv ou .xlsx; selecione os 3 de uma vez na janela de upload). A ferramenta combina os 3,
+        filtra automaticamente só o que está "Open" (em aberto), remove notas duplicadas, separa faturas-modelo e saldos
+        residuais de centavos (ajustes) antes de substituir a base. Recomendado atualizar 1-2x por semana.
+        Prefira .csv se puder exportar assim — arquivos .xlsx grandes podem deixar o navegador lento.
       </p>
       <div class="field">
-        <label for="file-input">Arquivo (.csv ou .xlsx)</label>
-        <input type="file" id="file-input" accept=".csv,.xlsx,.xls">
+        <label for="file-input">Arquivos (os 3 juntos: 2016-2022, 2023-2024, 2025-2026 — .csv ou .xlsx)</label>
+        <input type="file" id="file-input" accept=".csv,.xlsx,.xls" multiple>
       </div>
       <div id="upload-status"></div>
       <div id="upload-preview"></div>
@@ -400,34 +402,49 @@
   var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
 
   document.getElementById('file-input').addEventListener('change', function (evt) {
-    var file = evt.target.files[0];
-    if (!file) return;
+    var files = Array.prototype.slice.call(evt.target.files);
+    if (files.length === 0) return;
     var statusEl = document.getElementById('upload-status');
-    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo arquivo...</div>';
     document.getElementById('upload-preview').innerHTML = '';
 
-    var reader = new FileReader();
-    reader.onload = function (e) {
-      try {
-        var rows;
-        if (file.name.toLowerCase().endsWith('.csv')) {
-          rows = parseCSV(e.target.result);
-        } else {
-          var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: false });
-          var sheet = wb.Sheets[wb.SheetNames[0]];
-          rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    var allRows = [];
+    var filesDone = 0;
+
+    function readOne(file) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        try {
+          var rows;
+          if (file.name.toLowerCase().endsWith('.csv')) {
+            rows = parseCSV(e.target.result);
+          } else {
+            var wb = XLSX.read(e.target.result, { type: 'binary', cellDates: false });
+            var sheet = wb.Sheets[wb.SheetNames[0]];
+            rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+          }
+          allRows = allRows.concat(rows);
+          filesDone++;
+          statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lido ' + filesDone + ' de ' + files.length + ' arquivo(s) (' + allRows.length + ' linhas ate agora)...</div>';
+          if (filesDone === files.length) {
+            statusEl.innerHTML = '<div class="status-msg info">Processando ' + allRows.length + ' linhas de ' + files.length + ' arquivo(s)...</div>';
+            setTimeout(function () { processRows(allRows); }, 30);
+          }
+        } catch (err) {
+          statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler "' + escapeHtml(file.name) + '": ' + escapeHtml(err.message) + '</div>';
         }
-        statusEl.innerHTML = '<div class="status-msg info">Processando ' + rows.length + ' linhas...</div>';
-        setTimeout(function () { processRows(rows); }, 30);
-      } catch (err) {
-        statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler o arquivo: ' + escapeHtml(err.message) + '</div>';
+      };
+      reader.onerror = function () {
+        statusEl.innerHTML = '<div class="status-msg bad">Erro ao ler o arquivo "' + escapeHtml(file.name) + '".</div>';
+      };
+      if (file.name.toLowerCase().endsWith('.csv')) {
+        reader.readAsText(file, 'UTF-8');
+      } else {
+        reader.readAsBinaryString(file);
       }
-    };
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'UTF-8');
-    } else {
-      reader.readAsBinaryString(file);
     }
+
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Lendo ' + files.length + ' arquivo(s)...</div>';
+    files.forEach(readOne);
   });
 
   function parseCSV(text) {
