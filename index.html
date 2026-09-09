@@ -145,7 +145,7 @@
   <div class="meta-line" id="meta-line">Base: carregando informação...</div>
 
   <div class="tabs" role="tablist">
-    <button class="tab active" data-panel="consulta" role="tab" aria-selected="true">Consulta por CNPJ</button>
+    <button class="tab active" data-panel="consulta" role="tab" aria-selected="true">Consulta</button>
     <button class="tab" data-panel="atualizar" role="tab" aria-selected="false">Atualizar dados</button>
   </div>
 
@@ -153,9 +153,13 @@
   <div class="panel active" data-panel="consulta">
     <div class="card">
       <h2>Buscar empresa</h2>
+      <div class="view-toggle" id="search-mode-toggle" style="margin-bottom:1.1rem;">
+        <button data-searchmode="cnpj" class="active">CNPJ (Brasil)</button>
+        <button data-searchmode="tagus">ID NetSuite (outros países)</button>
+      </div>
       <div class="row">
         <div class="field">
-          <label for="cnpj-input">CNPJ</label>
+          <label for="cnpj-input" id="cnpj-input-label">CNPJ</label>
           <input type="text" id="cnpj-input" placeholder="ex: 12.345.678/0001-99" inputmode="numeric">
         </div>
         <div class="field">
@@ -284,11 +288,31 @@
   });
 
   // ---------- TAB 1: busca ----------
-  // Uma empresa pode ter CNPJ proprio (Tax ID) e, se for uma subsidiaria,
-  // um "CNPJ Matriz" (o CNPJ do cliente-pai no NetSuite). Buscamos sempre os
-  // dois jeitos (por Tax ID e por CNPJ Matriz) e guardamos os dois conjuntos
-  // separados, pra permitir alternar entre "so esta empresa" e "grupo
-  // inteiro" sem precisar buscar de novo.
+  // Empresas do Brasil tem CNPJ (Tax ID); empresas de outros paises nao tem,
+  // entao usamos o Customer ID do NetSuite como identificador ali - funciona
+  // pra qualquer pais. Em ambos os casos existe um "matriz": o CNPJ Matriz
+  // (pro CNPJ) ou o NetSuite Matriz (Parent ID do cliente-pai, direto - nao
+  // precisa de CNPJ pra existir). Buscamos sempre os dois jeitos (individual
+  // e matriz) e guardamos os dois conjuntos separados, pra alternar entre
+  // "so esta empresa" e "grupo inteiro" sem precisar buscar de novo.
+  var SEARCH_MODES = {
+    cnpj: { individualField: 'Tax ID', matrizField: 'CNPJ Matriz', normalize: function (v) { return normCNPJ(v); }, label: 'CNPJ', placeholder: 'ex: 12.345.678/0001-99', inputMode: 'numeric' },
+    tagus: { individualField: 'Customer ID', matrizField: 'NetSuite Matriz', normalize: function (v) { return String(v || '').trim(); }, label: 'ID NetSuite', placeholder: 'ex: CUS25611', inputMode: 'text' }
+  };
+  var currentSearchMode = 'cnpj';
+
+  document.querySelectorAll('#search-mode-toggle button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentSearchMode = btn.dataset.searchmode;
+      document.querySelectorAll('#search-mode-toggle button').forEach(function (b) { b.classList.toggle('active', b === btn); });
+      var cfg = SEARCH_MODES[currentSearchMode];
+      document.getElementById('cnpj-input-label').textContent = cfg.label;
+      var input = document.getElementById('cnpj-input');
+      input.placeholder = cfg.placeholder;
+      input.setAttribute('inputmode', cfg.inputMode);
+    });
+  });
+
   function dedupeByInternalId(rows) {
     var seen = {}, out = [];
     rows.forEach(function (r) {
@@ -298,42 +322,45 @@
     return out;
   }
 
-  function fetchByEitherField(sheetName, cnpj, onData, onTimeout, timeoutMs) {
+  function fetchByEitherField(sheetName, searchValue, individualField, matrizField, onData, onTimeout, timeoutMs) {
     var byTax = null, byMatriz = null, gotError = false, pending = 2;
     function done() {
       pending--;
       if (gotError) return;
       if (pending === 0) onData({ byTax: byTax || [], byMatriz: byMatriz || [] });
     }
-    jsonp({ sheet: sheetName, filterField: 'Tax ID', filterValue: cnpj }, function (data) {
+    jsonp({ sheet: sheetName, filterField: individualField, filterValue: searchValue }, function (data) {
       byTax = data.rows || data || [];
       done();
     }, function () { gotError = true; onTimeout(); }, timeoutMs);
-    jsonp({ sheet: sheetName, filterField: 'CNPJ Matriz', filterValue: cnpj }, function (data) {
+    jsonp({ sheet: sheetName, filterField: matrizField, filterValue: searchValue }, function (data) {
       byMatriz = data.rows || data || [];
       done();
     }, function () { gotError = true; onTimeout(); }, timeoutMs);
   }
 
-  var searchState = null; // { cnpj, notasByTax, notasByMatriz, ajustesByTax, ajustesByMatriz, histByTax, histByMatriz, viewMode }
+  var searchState = null; // { searchValue, individualField, matrizField, notasByTax, notasByMatriz, ajustesByTax, ajustesByMatriz, histByTax, histByMatriz, viewMode }
 
   document.getElementById('btn-buscar').addEventListener('click', function () {
-    var cnpjRaw = document.getElementById('cnpj-input').value.trim();
-    var cnpj = normCNPJ(cnpjRaw);
+    var cfg = SEARCH_MODES[currentSearchMode];
+    var raw = document.getElementById('cnpj-input').value.trim();
+    var searchValue = cfg.normalize(raw);
     var statusEl = document.getElementById('busca-status');
     var resultEl = document.getElementById('resultado-area');
-    if (!cnpj) {
-      statusEl.innerHTML = '<div class="status-msg bad">Digite um CNPJ.</div>';
+    if (!searchValue) {
+      statusEl.innerHTML = '<div class="status-msg bad">Digite um valor pra buscar.</div>';
       return;
     }
     statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Buscando...</div>';
     resultEl.innerHTML = '';
 
-    fetchByEitherField('Notas', cnpj, function (notasResult) {
-      fetchByEitherField('Ajustes', cnpj, function (ajustesResult) {
+    fetchByEitherField('Notas', searchValue, cfg.individualField, cfg.matrizField, function (notasResult) {
+      fetchByEitherField('Ajustes', searchValue, cfg.individualField, cfg.matrizField, function (ajustesResult) {
         statusEl.innerHTML = '';
         searchState = {
-          cnpj: cnpj,
+          searchValue: searchValue,
+          individualField: cfg.individualField,
+          matrizField: cfg.matrizField,
           notasByTax: notasResult.byTax,
           notasByMatriz: notasResult.byMatriz,
           ajustesByTax: ajustesResult.byTax,
@@ -343,7 +370,7 @@
           viewMode: 'grupo'
         };
         renderTopSection();
-        loadHistorico(cnpj);
+        loadHistorico(searchValue, cfg.individualField, cfg.matrizField);
       }, function () {
         statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel carregar os ajustes (timeout). Tente de novo.</div>';
       });
@@ -368,10 +395,10 @@
     XLSX.writeFile(wb, filenameBase + '.xlsx');
   }
 
-  function isRealGroup(byTax, byMatriz) {
-    var taxIds = {};
-    byTax.forEach(function (r) { if (r['Tax ID']) taxIds[r['Tax ID']] = true; });
-    return byMatriz.some(function (r) { return r['Tax ID'] && !taxIds[r['Tax ID']]; });
+  function isRealGroup(byTax, byMatriz, field) {
+    var ids = {};
+    byTax.forEach(function (r) { if (r[field]) ids[r[field]] = true; });
+    return byMatriz.some(function (r) { return r[field] && !ids[r[field]]; });
   }
 
   function viewToggleHtml(activeMode) {
@@ -394,8 +421,8 @@
   function renderTopSection() {
     var resultEl = document.getElementById('resultado-area');
     var s = searchState;
-    var notasIsGroup = isRealGroup(s.notasByTax, s.notasByMatriz);
-    var ajustesIsGroup = isRealGroup(s.ajustesByTax, s.ajustesByMatriz);
+    var notasIsGroup = isRealGroup(s.notasByTax, s.notasByMatriz, s.individualField);
+    var ajustesIsGroup = isRealGroup(s.ajustesByTax, s.ajustesByMatriz, s.individualField);
     var isGroup = notasIsGroup || ajustesIsGroup;
     var mode = isGroup ? s.viewMode : 'individual';
 
@@ -405,7 +432,7 @@
 
     if (notas.length === 0 && ajustes.length === 0) {
       resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') +
-        '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse CNPJ.</div></div>' +
+        '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse valor.</div></div>' +
         '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
       if (isGroup) wireViewToggle(resultEl);
       return;
@@ -418,7 +445,7 @@
 
     var distinctCompanies = {};
     notas.concat(ajustes).forEach(function (r) {
-      var tid = r['Tax ID'];
+      var tid = r[s.individualField];
       if (tid) distinctCompanies[tid] = r['Company'] || tid;
     });
     var companyNames = Object.keys(distinctCompanies).map(function (k) { return distinctCompanies[k]; });
@@ -429,7 +456,7 @@
     html += '<div class="card">';
     if (showAsGroup) {
       html += '<h2>Grupo — ' + companyNames.length + ' empresas na estrutura</h2>';
-      html += '<p class="hint">Esse CNPJ é uma matriz — o resultado abaixo junta ela e todas as subsidiárias que apontam pra ela: ' +
+      html += '<p class="hint">Esse valor é de uma matriz — o resultado abaixo junta ela e todas as subsidiárias que apontam pra ela: ' +
         companyNames.map(escapeHtml).join(', ') + '.</p>';
     } else {
       html += '<h2>' + escapeHtml(empresa) + '</h2>';
@@ -477,14 +504,14 @@
     if (btnBaixarNotas) {
       btnBaixarNotas.addEventListener('click', function () {
         downloadCSV(currentNotas,
-          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
-          'notas_abertas_' + s.cnpj);
+          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          'notas_abertas_' + s.searchValue);
       });
     }
   }
 
-  function loadHistorico(cnpj) {
-    fetchByEitherField('Historico', cnpj, function (result) {
+  function loadHistorico(searchValue, individualField, matrizField) {
+    fetchByEitherField('Historico', searchValue, individualField, matrizField, function (result) {
       searchState.histByTax = result.byTax;
       searchState.histByMatriz = result.byMatriz;
       renderHistoricoSection();
@@ -498,8 +525,8 @@
     var card = document.getElementById('historico-card');
     if (!card || !searchState || searchState.histByTax === null) return;
     var s = searchState;
-    var notasIsGroup = isRealGroup(s.notasByTax, s.notasByMatriz);
-    var ajustesIsGroup = isRealGroup(s.ajustesByTax, s.ajustesByMatriz);
+    var notasIsGroup = isRealGroup(s.notasByTax, s.notasByMatriz, s.individualField);
+    var ajustesIsGroup = isRealGroup(s.ajustesByTax, s.ajustesByMatriz, s.individualField);
     var isGroup = notasIsGroup || ajustesIsGroup;
     var mode = isGroup ? s.viewMode : 'individual';
 
@@ -508,7 +535,7 @@
     var valid = rows.filter(function (r) { return !r.error; });
 
     if (valid.length === 0) {
-      var msg = 'Nenhum registro histórico encontrado para esse CNPJ (planilhas de histórico podem ainda não estar configuradas).';
+      var msg = 'Nenhum registro histórico encontrado para esse valor (arquivos de histórico podem ainda não estar configurados).';
       if (errors.length > 0) {
         msg = 'Erro ao ler ' + errors.length + ' arquivo(s) de histórico:<br>' + errors.map(function (e) { return escapeHtml(e.error); }).join('<br>');
       }
@@ -519,7 +546,7 @@
     valid.sort(function (a, b) { return String(a['Date']).localeCompare(String(b['Date'])); });
 
     var distinctCompanies = {};
-    valid.forEach(function (r) { if (r['Tax ID']) distinctCompanies[r['Tax ID']] = true; });
+    valid.forEach(function (r) { if (r[s.individualField]) distinctCompanies[r[s.individualField]] = true; });
     var showAsGroup = mode === 'grupo' && Object.keys(distinctCompanies).length > 1;
 
     var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (showAsGroup ? ', grupo de ' + Object.keys(distinctCompanies).length + ' empresas' : '') + '</h2>';
@@ -546,8 +573,8 @@
     if (btnBaixarHist) {
       btnBaixarHist.addEventListener('click', function () {
         downloadCSV(currentHistorico,
-          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
-          'historico_completo_' + s.cnpj);
+          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
+          'historico_completo_' + s.searchValue);
       });
     }
   }
@@ -615,15 +642,15 @@
   }
 
   // ---------- TAB 2: atualizar dados ----------
-  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
-  var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
+  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
+  var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
 
   // Guardamos so os campos realmente usados de cada linha (17, nao os 38
   // originais do export) - descartando de cara URLs/memos longos que nunca
   // sao usados aqui. Isso e o que evita estourar a memoria do navegador com
   // 2M+ linhas. 'Customer ID' e mantido so pra montar o mapa de CNPJ Matriz.
   var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
   function slimRow(r) {
@@ -814,7 +841,12 @@
       var end = Math.min(idx + BATCH, total);
       for (; idx < end; idx++) {
         var r = slimRows[idx];
-        r['CNPJ Matriz'] = customerIdToTaxId[parentCustomerId(r)] || '';
+        var parentCustId = parentCustomerId(r);
+        r['CNPJ Matriz'] = customerIdToTaxId[parentCustId] || '';
+        // "NetSuite Matriz" e mais simples que o CNPJ Matriz: o Parent ID
+        // ja traz o Customer ID do pai direto, sem precisar de mapa/lookup -
+        // funciona pra qualquer pais (nao depende de CNPJ existir).
+        r['NetSuite Matriz'] = parentCustId;
         r['Date'] = excelSerialToDate(r['Date']);
       }
       statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Processando linhas — ' + Math.round((idx / total) * 100) + '%...</div>';
