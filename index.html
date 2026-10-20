@@ -70,6 +70,7 @@
   .brand span { color: var(--accent); }
   h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
   .sub { color: var(--ink-soft); font-size: 0.95rem; margin: 0 0 1.8rem; }
+  .prog-version { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); }
   .meta-line { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
 
   .tabs { display: flex; gap: 0.4rem; border-bottom: 1px solid var(--line); margin-bottom: 1.8rem; }
@@ -139,6 +140,7 @@
 <div class="wrap">
   <header class="top">
     <div class="brand"><img src="wellhub-logo.png" alt="Wellhub"> Wellhub · SBS Collection</div>
+    <div class="prog-version" id="prog-version"></div>
   </header>
   <h1>Reconciliação Bancária</h1>
   <p class="sub">Consulta por CNPJ, saldo real em aberto e ajustes que precisam de revisão.</p>
@@ -199,7 +201,12 @@
 <iframe name="hidden_upload_frame" style="display:none;"></iframe>
 
 <script>
-  var APPS_SCRIPT_URL = "https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
+  // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
+  // publicada. (A data da BASE de dados vem da aba Meta, na linha abaixo.)
+  var PROGRAM_UPDATED = '20/10/2026';
+  document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
+
+  var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
   var jsonpCounter = 0;
 
   function jsonp(params, onData, onTimeout, timeoutMs) {
