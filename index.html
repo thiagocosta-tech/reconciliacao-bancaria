@@ -221,7 +221,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '20/10/2026 14:01';
+  var PROGRAM_UPDATED = '20/10/2026 14:34';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -515,54 +515,13 @@
 
     if (notas.length === 0 && ajustes.length === 0) {
       resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') +
-        '<div class="card"><div class="empty">Nenhuma nota em aberto encontrada para esse valor.</div></div>' +
         '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
       if (isGroup) wireViewToggle(resultEl);
       return;
     }
 
-    var totalRemaining = notas.reduce(function (s2, n) { return s2 + parseNum(n['Remaining']); }, 0);
-    var totalBilled = notas.reduce(function (s2, n) { return s2 + parseNum(n['Total Billed']); }, 0);
-    var totalPaid = notas.reduce(function (s2, n) { return s2 + parseNum(n['Paid']); }, 0);
-    var empresa = (notas[0] && notas[0]['Company']) || (ajustes[0] && ajustes[0]['Company']) || '(nome nao encontrado)';
-
-    var distinctCompanies = {};
-    notas.concat(ajustes).forEach(function (r) {
-      var tid = r[s.individualField];
-      if (tid) distinctCompanies[tid] = r['Company'] || tid;
-    });
-    var companyNames = Object.keys(distinctCompanies).map(function (k) { return distinctCompanies[k]; });
-    var showAsGroup = mode === 'grupo' && companyNames.length > 1;
-
     var html = '';
     if (isGroup) html += viewToggleHtml(mode);
-    html += '<div class="card">';
-    if (showAsGroup) {
-      html += '<h2>Grupo — ' + companyNames.length + ' empresas na estrutura</h2>';
-      html += '<p class="hint">Esse valor é de uma matriz — o resultado abaixo junta ela e todas as subsidiárias que apontam pra ela: ' +
-        companyNames.map(escapeHtml).join(', ') + '.</p>';
-    } else {
-      html += '<h2>' + escapeHtml(empresa) + '</h2>';
-    }
-    html += '<div class="summary-grid">';
-    html += summaryBox('Notas em aberto', notas.length, '');
-    html += summaryBox('Total cobrado', fmtBRL(totalBilled), '');
-    html += summaryBox('Total recebido', fmtBRL(totalPaid), '');
-    html += summaryBox('Saldo real em aberto', fmtBRL(totalRemaining), 'warn');
-    html += '</div>';
-
-    if (notas.length > 0) {
-      html += '<div class="table-scroll"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
-        '<th>Invoice #</th><th>Tipo</th><th>Data</th><th>Vencimento</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
-      notas.forEach(function (n) {
-        html += '<tr>' + (showAsGroup ? '<td>' + escapeHtml(n['Company']) + '</td>' : '') +
-          '<td>' + escapeHtml(n['Invoice #']) + '</td><td>' + escapeHtml(n['Transaction']) + '</td><td>' + escapeHtml(n['Date']) + '</td><td>' + escapeHtml(n['Due Date']) + '</td>' +
-          moneyTd(n['Total Billed']) + moneyTd(n['Paid']) + moneyTd(n['Remaining']) + '</tr>';
-      });
-      html += '</tbody></table></div>';
-      html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-notas">Baixar notas em aberto (Excel)</button></div>';
-    }
-    html += '</div>';
 
     if (ajustes.length > 0) {
       html += '<div class="card"><h2>Reconciliação — ' + ajustes.length + ' ' + (ajustes.length === 1 ? 'item encontrado' : 'itens encontrados') + ' pra revisar</h2>';
@@ -583,14 +542,6 @@
       wireAjusteButtons(a, idx);
     });
 
-    var btnBaixarNotas = document.getElementById('btn-baixar-notas');
-    if (btnBaixarNotas) {
-      btnBaixarNotas.addEventListener('click', function () {
-        downloadCSV(currentNotas,
-          ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status'],
-          'notas_abertas_' + s.searchValue);
-      });
-    }
   }
 
   function historicoFailed() {
@@ -816,7 +767,11 @@
         '<button class="ghost" data-dl="' + c.key + '">Baixar esta subcategoria</button></div>' + tableHtml(c.html) + '</div>';
     }
 
-    var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (showAsGroup ? ', grupo de ' + Object.keys(distinct).length + ' empresas' : '') + '</h2>';
+    var companyNames = {};
+    valid.forEach(function (r) { if (r[fld]) companyNames[r[fld]] = r['Company'] || r[fld]; });
+    var namesList = Object.keys(companyNames).map(function (k) { return companyNames[k]; });
+    var html = '<h2>' + (showAsGroup ? 'Grupo — ' + namesList.length + ' empresas na estrutura' : escapeHtml(namesList[0] || '(nome nao encontrado)')) + '</h2>';
+    html += '<p class="hint">' + (showAsGroup ? 'Esse valor é de uma matriz — o resultado junta ela e todas as subsidiárias que apontam pra ela: ' + namesList.map(escapeHtml).join(', ') + '. ' : '') + valid.length + ' transações no histórico (inclusive fechadas).</p>';
     html += '<p class="hint">Cada pagamento aparece logo abaixo das faturas que quitou (a data de quitação da fatura = a data do pagamento) e a soma é conferida. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. Em cima ficam as <strong>pendências</strong>, por subcategoria; embaixo, o que está <strong>conciliado</strong>.</p>';
     html += '<div class="summary-grid">' +
       summaryBox('Em aberto (Open)', nOpenItems + ' · ' + fmtBRL(saldoOpen), nOpenItems ? 'warn' : '') +
