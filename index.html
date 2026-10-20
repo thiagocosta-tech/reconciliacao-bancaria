@@ -635,14 +635,34 @@
       return;
     }
 
-    valid.sort(function (a, b) { return String(a['Date']).localeCompare(String(b['Date'])); });
+    // Prioridade na ordenacao: 0 = Open (em aberto), 1 = divergente (status
+    // fechado mas ainda com saldo), 2 = correto (fechado e zerado). Dentro de
+    // cada grupo, mais recentes primeiro.
+    function histPriority(r) {
+      if (r['Status'] === 'Open') return 0;
+      return Math.abs(parseNum(r['Remaining'])) > 0.02 ? 1 : 2;
+    }
+    valid.sort(function (a, b) {
+      var pa = histPriority(a), pb = histPriority(b);
+      if (pa !== pb) return pa - pb;
+      return String(b['Date']).localeCompare(String(a['Date']));
+    });
+    var nOpen = valid.filter(function (r) { return histPriority(r) === 0; }).length;
+    var nDiverg = valid.filter(function (r) { return histPriority(r) === 1; }).length;
+    var saldoOpen = valid.filter(function (r) { return histPriority(r) === 0; }).reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
+    var saldoDiverg = valid.filter(function (r) { return histPriority(r) === 1; }).reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
 
     var distinctCompanies = {};
     valid.forEach(function (r) { if (r[s.individualField]) distinctCompanies[r[s.individualField]] = true; });
     var showAsGroup = mode === 'grupo' && Object.keys(distinctCompanies).length > 1;
 
     var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (showAsGroup ? ', grupo de ' + Object.keys(distinctCompanies).length + ' empresas' : '') + '</h2>';
-    html += '<p class="hint">Use isso pra conferir se o que está marcado como fechado (Paid In Full, Deposited, Fully Applied) realmente está com saldo zerado.</p>';
+    html += '<p class="hint">Use isso pra conferir se o que está marcado como fechado (Paid In Full, Deposited, Fully Applied) realmente está com saldo zerado. As notas <strong>em aberto</strong> e as <strong>divergentes</strong> aparecem sempre primeiro.</p>';
+    html += '<div class="summary-grid">' +
+      summaryBox('Em aberto (Open)', nOpen + ' · ' + fmtBRL(saldoOpen), nOpen ? 'warn' : '') +
+      summaryBox('Divergentes (fechadas com saldo)', nDiverg + ' · ' + fmtBRL(saldoDiverg), nDiverg ? 'bad' : '') +
+      summaryBox('Corretas (fechadas e zeradas)', valid.length - nOpen - nDiverg, '') +
+      '</div>';
     html += '<div class="table-scroll"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
       '<th>Invoice #</th><th>Tipo</th><th>Data</th><th>Status</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th></tr></thead><tbody>';
     valid.forEach(function (r) {
