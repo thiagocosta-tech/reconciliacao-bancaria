@@ -77,7 +77,16 @@
   .badge.ok { background: var(--ok-bg); color: var(--ok); }
   .badge.bad { background: var(--bad-bg); color: var(--bad); }
   .badge.warn { background: var(--warn-bg); color: var(--warn); }
-  .only-diff tr.grp-ok { display: none; }
+  .block { margin-top: 1.6rem; }
+  .block-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.8rem; }
+  .block-title { font-family: 'Fraunces', serif; font-size: 1.05rem; font-weight: 600; margin: 0; }
+  .block-title.pend { color: var(--warn); }
+  .block-title.ok { color: var(--ok); }
+  .block-pend { border-top: 3px solid var(--warn); padding-top: 1rem; }
+  .block-ok { border-top: 3px solid var(--ok); padding-top: 1rem; }
+  .subcat { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem 1rem 0.4rem; margin-bottom: 1rem; background: var(--paper-sunk); }
+  .subcat-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
+  .subcat-meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
   .only-diff-toggle { display: inline-block; font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.6rem; cursor: pointer; }
   .prog-version { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); }
   .meta-line { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
@@ -212,7 +221,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '20/10/2026 13:58';
+  var PROGRAM_UPDATED = '20/10/2026 14:01';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -714,16 +723,18 @@
       var sp = g.pay.reduce(function (t, r) { return t + absAmt(r); }, 0);
       if (g.inv.length && g.pay.length) {
         var diff = sp - si;
-        if (Math.abs(diff) <= 0.02) { g.status = 'ok'; g.label = '✔ Bate'; }
-        else { g.status = 'bad'; g.label = 'Diferença ' + fmtBRL(diff) + (diff > 0 ? ' (pagamento maior)' : ' (pagamento menor)'); }
+        if (Math.abs(diff) <= 0.02) { g.status = 'ok'; g.cat = 'ok'; g.label = '✔ Bate'; g.val = si; }
+        else { g.status = 'bad'; g.cat = 'diferenca'; g.val = Math.abs(diff); g.label = 'Diferença ' + fmtBRL(diff) + (diff > 0 ? ' (pagamento maior)' : ' (pagamento menor)'); }
       } else if (g.pay.length) {
-        g.status = 'bad'; g.label = 'Pagamento sem fatura vinculada';
+        g.status = 'bad'; g.cat = 'sem_fatura'; g.val = sp; g.label = 'Pagamento sem fatura vinculada';
       } else if (g.inv.length && !g.day) {
-        g.status = 'warn'; g.label = 'Fatura quitada sem data de quitação';
+        g.status = 'warn'; g.cat = 'sem_data'; g.val = si; g.label = 'Fatura quitada sem data de quitação';
       } else if (g.inv.length) {
-        g.status = 'warn'; g.label = g.other.length ? 'Quitada com nota de crédito (conferir)' : 'Quitada sem pagamento nessa data';
+        g.status = 'warn'; g.val = si;
+        if (g.other.length) { g.cat = 'credito'; g.label = 'Quitada com nota de crédito (conferir)'; }
+        else { g.cat = 'sem_pagamento'; g.label = 'Quitada sem pagamento nessa data'; }
       } else {
-        g.status = 'ok'; g.label = 'Nota de crédito (sem pagamento)';
+        g.status = 'ok'; g.cat = 'ok'; g.val = 0; g.label = 'Nota de crédito (sem pagamento)';
       }
       if (g.status === 'ok') nOk++; else nBad++;
     });
@@ -736,13 +747,10 @@
     var saldoDiverg = diverg.reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
 
     var nCols = 9 + (showAsGroup ? 1 : 0);
-    var exportRows = [];
     function rowHtml(r, cls, conc) {
       var isPay = r['Transaction'] === 'Payment';
       var ref = isPay ? monthLabelFromKey(dateKey(r['Date'])) : (refLabel(r['Ref']) || monthLabelFromKey(dateKey(r['Date'])));
       var refTitle = isPay ? 'mês do pagamento' : (r['Ref'] ? 'mês de referência da cobrança (vem do Memo da fatura)' : 'sem referência no Memo — usando o mês da data da fatura');
-      r['Conciliacao'] = conc ? conc.label : '';
-      exportRows.push(r);
       var h = '<tr class="' + cls + (isPay ? ' pay-row' : '') + '">';
       if (showAsGroup) h += '<td>' + escapeHtml(r['Company']) + '</td>';
       h += '<td>' + (isPay ? '↳ ' : '') + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td>' +
@@ -752,59 +760,92 @@
       h += '<td>' + (conc ? '<span class="badge ' + conc.status + '">' + escapeHtml(conc.label) + '</span>' : '') + '</td></tr>';
       return h;
     }
-    function secRow(txt) { return '<tr class="sec"><td colspan="' + nCols + '">' + txt + '</td></tr>'; }
+    function tableHtml(inner) {
+      return '<div class="table-scroll recon"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
+        '<th>Documento</th><th>Tipo</th><th>Mês ref./pago</th><th>Data</th><th>Quitação</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th><th>Conciliação</th></tr></thead><tbody>' +
+        inner + '</tbody></table></div>';
+    }
 
-    var body = '';
-    if (open.length) {
-      body += secRow('Em aberto (' + open.length + ')');
-      open.forEach(function (r) {
-        var paid = parseNum(r['Paid']);
-        var conc = paid > 0.02 ? { status: 'warn', label: 'Pago parcial ' + fmtBRL(paid) + ' de ' + fmtBRL(parseNum(r['Total Billed'])) } : { status: 'warn', label: 'Em aberto' };
-        body += rowHtml(r, 'grp-open', conc);
-      });
+    // Subcategorias. As de "pendência" ficam em cima; "ok" (conciliado) embaixo.
+    function mk(key, title, valueLabel) { return { key: key, title: title, valueLabel: valueLabel, html: '', rows: [], count: 0, value: 0 }; }
+    var cOpen = mk('open', 'Em aberto (Open)', 'saldo');
+    var cPar = mk('pago_parcial', 'Em aberto com pagamento parcial', 'saldo');
+    var cDiv = mk('fechada_com_saldo', 'Fechadas com saldo', 'saldo');
+    var cDif = mk('diferenca', 'Diferença entre fatura e pagamento', 'diferença total');
+    var cSemFat = mk('pagamento_sem_fatura', 'Pagamento sem fatura vinculada', 'sem fatura');
+    var cSemPg = mk('fatura_sem_pagamento', 'Fatura quitada sem pagamento na data', 'cobrado');
+    var cCred = mk('quitada_com_credito', 'Quitada com nota de crédito (conferir)', 'cobrado');
+    var cSemData = mk('sem_data_quitacao', 'Fatura quitada sem data de quitação', 'cobrado');
+    var cOk = mk('conciliado', 'Conciliado', 'conciliado');
+    var byCat = { diferenca: cDif, sem_fatura: cSemFat, sem_pagamento: cSemPg, credito: cCred, sem_data: cSemData, ok: cOk };
+
+    function addFlat(c, r, conc) {
+      r['Conciliacao'] = conc.label; r['Subcategoria'] = c.title;
+      c.html += rowHtml(r, 'grp-open', conc); c.rows.push(r); c.count++; c.value += parseNum(r['Remaining']);
     }
-    if (diverg.length) {
-      body += secRow('Fechadas com saldo — divergentes (' + diverg.length + ')');
-      diverg.forEach(function (r) { body += rowHtml(r, 'grp-diverg', { status: 'bad', label: 'Fechada, mas com saldo' }); });
-    }
-    if (list.length) {
-      body += secRow('Conciliação cobrança → pagamento (mais recentes primeiro)');
-      list.forEach(function (g) {
-        g.inv.sort(function (a, b) { return String(a['Ref']).localeCompare(String(b['Ref'])) || String(a['Invoice #']).localeCompare(String(b['Invoice #'])); });
-        var rows = g.inv.concat(g.other, g.pay);
-        var cls = 'grp-' + (g.status === 'ok' ? 'ok' : 'bad');
-        rows.forEach(function (r, i) {
-          var isLast = i === rows.length - 1;
-          body += rowHtml(r, cls + (i === 0 ? ' grp-first' : ''), isLast ? { status: g.status, label: g.label } : null);
-          if (!isLast) r['Conciliacao'] = g.label;
-        });
+    open.forEach(function (r) {
+      var paid = parseNum(r['Paid']);
+      if (paid > 0.02) addFlat(cPar, r, { status: 'warn', label: 'Pago parcial ' + fmtBRL(paid) + ' de ' + fmtBRL(parseNum(r['Total Billed'])) });
+      else addFlat(cOpen, r, { status: 'warn', label: 'Em aberto' });
+    });
+    diverg.forEach(function (r) { addFlat(cDiv, r, { status: 'bad', label: 'Fechada, mas com saldo' }); });
+    list.forEach(function (g) {
+      var c = byCat[g.cat];
+      g.inv.sort(function (a, b) { return String(a['Ref']).localeCompare(String(b['Ref'])) || String(a['Invoice #']).localeCompare(String(b['Invoice #'])); });
+      var rows = g.inv.concat(g.other, g.pay);
+      var cls = 'grp-' + (g.status === 'ok' ? 'ok' : 'bad');
+      rows.forEach(function (r, i) {
+        var isLast = i === rows.length - 1;
+        r['Conciliacao'] = g.label; r['Subcategoria'] = c.title;
+        c.html += rowHtml(r, cls + (i === 0 ? ' grp-first' : ''), isLast ? { status: g.status, label: g.label } : null);
+        c.rows.push(r);
       });
+      c.count++; c.value += g.val || 0;
+    });
+
+    var pendCats = [cOpen, cPar, cDiv, cDif, cSemFat, cSemPg, cCred, cSemData].filter(function (c) { return c.count > 0; });
+    var pendRows = [];
+    pendCats.forEach(function (c) { pendRows = pendRows.concat(c.rows); });
+    var pendCount = pendCats.reduce(function (t, c) { return t + c.count; }, 0);
+    var nOpenItems = cOpen.count + cPar.count;
+    var nBadItems = pendCats.length ? pendCount - nOpenItems - cDiv.count : 0;
+
+    function subHtml(c) {
+      return '<div class="subcat"><div class="subcat-head"><div><strong>' + c.title + '</strong>' +
+        '<span class="subcat-meta">' + c.count + ' ' + (c.count === 1 ? 'item' : 'itens') + ' · ' + c.valueLabel + ' ' + fmtBRL(c.value) + '</span></div>' +
+        '<button class="ghost" data-dl="' + c.key + '">Baixar esta subcategoria</button></div>' + tableHtml(c.html) + '</div>';
     }
 
     var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (showAsGroup ? ', grupo de ' + Object.keys(distinct).length + ' empresas' : '') + '</h2>';
-    html += '<p class="hint">Cada pagamento aparece logo abaixo das faturas que quitou (a data de quitação da fatura = a data do pagamento) e a soma é conferida. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. <strong>Em aberto</strong> e <strong>divergentes</strong> aparecem sempre primeiro.</p>';
+    html += '<p class="hint">Cada pagamento aparece logo abaixo das faturas que quitou (a data de quitação da fatura = a data do pagamento) e a soma é conferida. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. Em cima ficam as <strong>pendências</strong>, por subcategoria; embaixo, o que está <strong>conciliado</strong>.</p>';
     html += '<div class="summary-grid">' +
-      summaryBox('Em aberto (Open)', open.length + ' · ' + fmtBRL(saldoOpen), open.length ? 'warn' : '') +
+      summaryBox('Em aberto (Open)', nOpenItems + ' · ' + fmtBRL(saldoOpen), nOpenItems ? 'warn' : '') +
       summaryBox('Fechadas com saldo', diverg.length + ' · ' + fmtBRL(saldoDiverg), diverg.length ? 'bad' : '') +
       summaryBox('Conciliações que batem', nOk, '') +
       summaryBox('Não batem / sem vínculo', nBad, nBad ? 'bad' : '') +
       '</div>';
-    html += '<label class="only-diff-toggle"><input type="checkbox" id="chk-so-dif"> Mostrar só o que não bate</label>';
-    html += '<div class="table-scroll recon" id="recon-wrap"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
-      '<th>Documento</th><th>Tipo</th><th>Mês ref./pago</th><th>Data</th><th>Quitação</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th><th>Conciliação</th></tr></thead><tbody>' +
-      body + '</tbody></table></div>';
-    html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-historico">Baixar histórico completo (Excel)</button></div>';
+
+    html += '<div class="block block-pend"><div class="block-head"><h3 class="block-title pend">Pendências — o que precisa de atenção (' + pendCount + ')</h3>' +
+      (pendCount ? '<button class="primary" data-dl="__pendencias">Baixar tudo em aberto</button>' : '') + '</div>';
+    html += pendCount ? pendCats.map(subHtml).join('') : '<div class="empty">Nenhuma pendência encontrada para esse valor.</div>';
+    html += '</div>';
+
+    html += '<div class="block block-ok"><div class="block-head"><h3 class="block-title ok">Tudo certo — conciliado (' + cOk.count + ')</h3>' +
+      (cOk.count ? '<button class="ghost" data-dl="conciliado">Baixar conciliado</button>' : '') + '</div>';
+    html += cOk.count ? tableHtml(cOk.html) : '<div class="empty">Nada conciliado ainda para esse valor.</div>';
+    html += '</div>';
     card.innerHTML = html;
 
-    currentHistorico = exportRows;
-    document.getElementById('chk-so-dif').addEventListener('change', function () {
-      document.getElementById('recon-wrap').classList.toggle('only-diff', this.checked);
+    var DL_COLS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Date Closed', 'Ref', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Subcategoria', 'Conciliacao'];
+    var dlMap = { '__pendencias': { rows: pendRows, name: 'em_aberto_tudo' } };
+    pendCats.concat([cOk]).forEach(function (c) { dlMap[c.key] = { rows: c.rows, name: (c === cOk ? 'conciliado' : 'em_aberto_' + c.key) }; });
+    card.querySelectorAll('[data-dl]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var d = dlMap[btn.getAttribute('data-dl')];
+        if (d) downloadCSV(d.rows, DL_COLS, d.name + '_' + s.searchValue);
+      });
     });
-    document.getElementById('btn-baixar-historico').addEventListener('click', function () {
-      downloadCSV(currentHistorico,
-        ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Date Closed', 'Ref', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Conciliacao'],
-        'historico_conciliado_' + s.searchValue);
-    });
+    currentHistorico = pendRows.concat(cOk.rows);
   }
 
   function renderHistoricoSection() {
