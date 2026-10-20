@@ -289,6 +289,17 @@
     if (isNaN(n)) return 0;
     return neg ? -Math.abs(n) : n;
   }
+  // Converte a data em numero comparavel (aaaammdd), qualquer que seja o
+  // formato: "2025-04-15", "2025-04-15T03:00:00.000Z" (Sheets), "15/04/2025"
+  // (pt-BR, dia primeiro) ou "15-04-2025". Datas ilegiveis vao pro fim (0).
+  function dateKey(v) {
+    var s = String(v == null ? '' : v).trim();
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return +m[1] * 10000 + +m[2] * 100 + +m[3];
+    m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/);
+    if (m) return +m[3] * 10000 + +m[2] * 100 + +m[1];
+    return 0;
+  }
   // Celula de valor com o texto bruto como dica (passar o mouse) - ajuda a
   // diagnosticar se algum valor vier num formato inesperado.
   function moneyTd(raw, cls) {
@@ -682,7 +693,7 @@
     valid.sort(function (a, b) {
       var pa = histPriority(a), pb = histPriority(b);
       if (pa !== pb) return pa - pb;
-      return String(b['Date']).localeCompare(String(a['Date']));
+      return dateKey(b['Date']) - dateKey(a['Date']); // mais recente primeiro
     });
     var nOpen = valid.filter(function (r) { return histPriority(r) === 0; }).length;
     var nDiverg = valid.filter(function (r) { return histPriority(r) === 1; }).length;
