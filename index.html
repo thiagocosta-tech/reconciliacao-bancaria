@@ -260,9 +260,39 @@
     form.submit();
   }
 
+  // Le numeros em qualquer formato que o export/planilha possa trazer:
+  // "780", "780.5", "1234.56", "780,50", "1.234,56", "1,234.56", "R$ 1.234,56",
+  // "(780,50)" (negativo) e "-780,50". Antes era parseFloat puro, que le
+  // "780,50" como 780, "R$ 780" como NaN (=0) e "1.234,56" como 1.234.
   function parseNum(v) {
-    var n = parseFloat(v);
-    return isNaN(n) ? 0 : n;
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var s = String(v == null ? '' : v).trim();
+    if (!s) return 0;
+    var neg = /^\(.*\)$/.test(s) || /^-/.test(s) || /-$/.test(s) || /^R\$\s*-/.test(s);
+    s = s.replace(/[^0-9.,]/g, '');
+    if (!s) return 0;
+    var lastDot = s.lastIndexOf('.'), lastComma = s.lastIndexOf(',');
+    if (lastDot !== -1 && lastComma !== -1) {
+      // os dois aparecem: o que vem por ultimo e o decimal, o outro e milhar
+      if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.');
+      else s = s.replace(/,/g, '');
+    } else if (lastComma !== -1) {
+      // so virgula: decimal se tem 1-2 digitos depois da ultima virgula e uma so virgula; senao milhar
+      var afterC = s.length - lastComma - 1;
+      s = (s.split(',').length === 2 && afterC <= 2) ? s.replace(',', '.') : s.replace(/,/g, '');
+    } else if (lastDot !== -1) {
+      // so ponto: milhar se ha varios pontos ou exatamente 3 digitos depois do unico ponto; senao decimal
+      var afterD = s.length - lastDot - 1;
+      if (s.split('.').length > 2 || afterD === 3) s = s.replace(/\./g, '');
+    }
+    var n = parseFloat(s);
+    if (isNaN(n)) return 0;
+    return neg ? -Math.abs(n) : n;
+  }
+  // Celula de valor com o texto bruto como dica (passar o mouse) - ajuda a
+  // diagnosticar se algum valor vier num formato inesperado.
+  function moneyTd(raw, cls) {
+    return '<td class="num ' + (cls || '') + '" title="valor bruto: ' + escapeHtml(String(raw == null ? '' : raw)) + '">' + fmtBRL(parseNum(raw)) + '</td>';
   }
   function fmtBRL(n) {
     return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -498,7 +528,7 @@
       notas.forEach(function (n) {
         html += '<tr>' + (showAsGroup ? '<td>' + escapeHtml(n['Company']) + '</td>' : '') +
           '<td>' + escapeHtml(n['Invoice #']) + '</td><td>' + escapeHtml(n['Transaction']) + '</td><td>' + escapeHtml(n['Date']) + '</td><td>' + escapeHtml(n['Due Date']) + '</td>' +
-          '<td class="num">' + fmtBRL(parseNum(n['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Paid'])) + '</td><td class="num">' + fmtBRL(parseNum(n['Remaining'])) + '</td></tr>';
+          moneyTd(n['Total Billed']) + moneyTd(n['Paid']) + moneyTd(n['Remaining']) + '</tr>';
       });
       html += '</tbody></table></div>';
       html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-notas">Baixar notas em aberto (Excel)</button></div>';
@@ -677,8 +707,8 @@
       var statusCls = r['Status'] === 'Open' ? 'warn' : (Math.abs(rem) > 0.02 ? 'bad' : '');
       html += '<tr>' + (showAsGroup ? '<td>' + escapeHtml(r['Company']) + '</td>' : '') +
         '<td>' + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td><td>' + escapeHtml(r['Date']) + '</td>' +
-        '<td>' + escapeHtml(r['Status']) + '</td><td class="num">' + fmtBRL(parseNum(r['Total Billed'])) + '</td><td class="num">' + fmtBRL(parseNum(r['Paid'])) + '</td>' +
-        '<td class="num ' + statusCls + '">' + fmtBRL(rem) + '</td></tr>';
+        '<td>' + escapeHtml(r['Status']) + '</td>' + moneyTd(r['Total Billed']) + moneyTd(r['Paid']) +
+        moneyTd(r['Remaining'], statusCls) + '</tr>';
     });
     html += '</tbody></table></div>';
     html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-historico">Baixar histórico completo (Excel)</button></div>';
