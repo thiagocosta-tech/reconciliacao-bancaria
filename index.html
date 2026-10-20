@@ -70,6 +70,15 @@
   .brand span { color: var(--accent); }
   h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
   .sub { color: var(--ink-soft); font-size: 0.95rem; margin: 0 0 1.8rem; }
+  .recon tr.pay-row td { background: var(--paper-sunk); }
+  .recon tr.grp-first td { border-top: 2px solid var(--line); }
+  .recon tr.sec td { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; text-transform: uppercase; color: var(--ink-soft); padding-top: 1rem; border-top: 0; }
+  .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .only-diff tr.grp-ok { display: none; }
+  .only-diff-toggle { display: inline-block; font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.6rem; cursor: pointer; }
   .prog-version { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); }
   .meta-line { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
 
@@ -203,7 +212,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '20/10/2026 13:50';
+  var PROGRAM_UPDATED = '20/10/2026 13:58';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -661,6 +670,143 @@
     }, CHUNK_TIMEOUT);
   }
 
+  // ---------- Conciliacao cobranca x pagamento ----------
+  // Nao existe um campo ligando pagamento a fatura. O vinculo e feito pela data:
+  // a "Date Closed" (quitacao) da fatura = "Date" do pagamento, da mesma empresa.
+  // Em cada dia de quitacao somamos as faturas quitadas e comparamos com o(s)
+  // pagamento(s) daquele dia: se a soma bate, esta conciliado. O mes de
+  // referencia da cobranca vem do Memo da fatura (campo 'Ref', gravado no upload).
+  function monthLabelFromKey(k) {
+    if (!k) return '';
+    var y = Math.floor(k / 10000), m = Math.floor(k / 100) % 100;
+    return (m < 10 ? '0' : '') + m + '/' + y;
+  }
+  function refLabel(ref) {
+    var m = String(ref || '').match(/^(\d{4})-(\d{2})/);
+    return m ? m[2] + '/' + m[1] : '';
+  }
+  function absAmt(r) {
+    var t = Math.abs(parseNum(r['Total Billed']));
+    return t || Math.abs(parseNum(r['Paid']));
+  }
+
+  function renderReconciliacao(card, valid, s) {
+    var fld = s.individualField;
+    var distinct = {};
+    valid.forEach(function (r) { if (r[fld]) distinct[r[fld]] = true; });
+    var showAsGroup = Object.keys(distinct).length > 1;
+
+    var open = [], diverg = [], groups = {};
+    valid.forEach(function (r) {
+      if (r['Status'] === 'Open') { open.push(r); return; }
+      if (Math.abs(parseNum(r['Remaining'])) > 0.02) { diverg.push(r); return; }
+      var isPay = r['Transaction'] === 'Payment';
+      var day = dateKey(isPay ? r['Date'] : r['Date Closed']);
+      var key = (r[fld] || '') + '|' + day;
+      var g = groups[key] || (groups[key] = { day: day, inv: [], pay: [], other: [] });
+      if (isPay) g.pay.push(r); else if (r['Transaction'] === 'Invoice') g.inv.push(r); else g.other.push(r);
+    });
+
+    var list = Object.keys(groups).map(function (k) { return groups[k]; });
+    var nOk = 0, nBad = 0;
+    list.forEach(function (g) {
+      var si = g.inv.reduce(function (t, r) { return t + parseNum(r['Total Billed']); }, 0);
+      var sp = g.pay.reduce(function (t, r) { return t + absAmt(r); }, 0);
+      if (g.inv.length && g.pay.length) {
+        var diff = sp - si;
+        if (Math.abs(diff) <= 0.02) { g.status = 'ok'; g.label = '✔ Bate'; }
+        else { g.status = 'bad'; g.label = 'Diferença ' + fmtBRL(diff) + (diff > 0 ? ' (pagamento maior)' : ' (pagamento menor)'); }
+      } else if (g.pay.length) {
+        g.status = 'bad'; g.label = 'Pagamento sem fatura vinculada';
+      } else if (g.inv.length && !g.day) {
+        g.status = 'warn'; g.label = 'Fatura quitada sem data de quitação';
+      } else if (g.inv.length) {
+        g.status = 'warn'; g.label = g.other.length ? 'Quitada com nota de crédito (conferir)' : 'Quitada sem pagamento nessa data';
+      } else {
+        g.status = 'ok'; g.label = 'Nota de crédito (sem pagamento)';
+      }
+      if (g.status === 'ok') nOk++; else nBad++;
+    });
+    list.sort(function (a, b) { return b.day - a.day; }); // mais recente primeiro
+
+    function byDateDesc(a, b) { return dateKey(b['Date']) - dateKey(a['Date']); }
+    open.sort(byDateDesc);
+    diverg.sort(byDateDesc);
+    var saldoOpen = open.reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
+    var saldoDiverg = diverg.reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
+
+    var nCols = 9 + (showAsGroup ? 1 : 0);
+    var exportRows = [];
+    function rowHtml(r, cls, conc) {
+      var isPay = r['Transaction'] === 'Payment';
+      var ref = isPay ? monthLabelFromKey(dateKey(r['Date'])) : (refLabel(r['Ref']) || monthLabelFromKey(dateKey(r['Date'])));
+      var refTitle = isPay ? 'mês do pagamento' : (r['Ref'] ? 'mês de referência da cobrança (vem do Memo da fatura)' : 'sem referência no Memo — usando o mês da data da fatura');
+      r['Conciliacao'] = conc ? conc.label : '';
+      exportRows.push(r);
+      var h = '<tr class="' + cls + (isPay ? ' pay-row' : '') + '">';
+      if (showAsGroup) h += '<td>' + escapeHtml(r['Company']) + '</td>';
+      h += '<td>' + (isPay ? '↳ ' : '') + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td>' +
+        '<td title="' + refTitle + '">' + ref + '</td><td>' + escapeHtml(r['Date']) + '</td><td>' + (isPay ? '' : escapeHtml(r['Date Closed'])) + '</td>';
+      if (isPay) h += '<td class="num"></td>' + moneyTd(r['Total Billed']) + '<td class="num"></td>';
+      else h += moneyTd(r['Total Billed']) + moneyTd(r['Paid']) + moneyTd(r['Remaining'], r['Status'] === 'Open' ? 'warn' : (Math.abs(parseNum(r['Remaining'])) > 0.02 ? 'bad' : ''));
+      h += '<td>' + (conc ? '<span class="badge ' + conc.status + '">' + escapeHtml(conc.label) + '</span>' : '') + '</td></tr>';
+      return h;
+    }
+    function secRow(txt) { return '<tr class="sec"><td colspan="' + nCols + '">' + txt + '</td></tr>'; }
+
+    var body = '';
+    if (open.length) {
+      body += secRow('Em aberto (' + open.length + ')');
+      open.forEach(function (r) {
+        var paid = parseNum(r['Paid']);
+        var conc = paid > 0.02 ? { status: 'warn', label: 'Pago parcial ' + fmtBRL(paid) + ' de ' + fmtBRL(parseNum(r['Total Billed'])) } : { status: 'warn', label: 'Em aberto' };
+        body += rowHtml(r, 'grp-open', conc);
+      });
+    }
+    if (diverg.length) {
+      body += secRow('Fechadas com saldo — divergentes (' + diverg.length + ')');
+      diverg.forEach(function (r) { body += rowHtml(r, 'grp-diverg', { status: 'bad', label: 'Fechada, mas com saldo' }); });
+    }
+    if (list.length) {
+      body += secRow('Conciliação cobrança → pagamento (mais recentes primeiro)');
+      list.forEach(function (g) {
+        g.inv.sort(function (a, b) { return String(a['Ref']).localeCompare(String(b['Ref'])) || String(a['Invoice #']).localeCompare(String(b['Invoice #'])); });
+        var rows = g.inv.concat(g.other, g.pay);
+        var cls = 'grp-' + (g.status === 'ok' ? 'ok' : 'bad');
+        rows.forEach(function (r, i) {
+          var isLast = i === rows.length - 1;
+          body += rowHtml(r, cls + (i === 0 ? ' grp-first' : ''), isLast ? { status: g.status, label: g.label } : null);
+          if (!isLast) r['Conciliacao'] = g.label;
+        });
+      });
+    }
+
+    var html = '<h2>Histórico completo — ' + valid.length + ' transações (inclusive fechadas)' + (showAsGroup ? ', grupo de ' + Object.keys(distinct).length + ' empresas' : '') + '</h2>';
+    html += '<p class="hint">Cada pagamento aparece logo abaixo das faturas que quitou (a data de quitação da fatura = a data do pagamento) e a soma é conferida. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. <strong>Em aberto</strong> e <strong>divergentes</strong> aparecem sempre primeiro.</p>';
+    html += '<div class="summary-grid">' +
+      summaryBox('Em aberto (Open)', open.length + ' · ' + fmtBRL(saldoOpen), open.length ? 'warn' : '') +
+      summaryBox('Fechadas com saldo', diverg.length + ' · ' + fmtBRL(saldoDiverg), diverg.length ? 'bad' : '') +
+      summaryBox('Conciliações que batem', nOk, '') +
+      summaryBox('Não batem / sem vínculo', nBad, nBad ? 'bad' : '') +
+      '</div>';
+    html += '<label class="only-diff-toggle"><input type="checkbox" id="chk-so-dif"> Mostrar só o que não bate</label>';
+    html += '<div class="table-scroll recon" id="recon-wrap"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
+      '<th>Documento</th><th>Tipo</th><th>Mês ref./pago</th><th>Data</th><th>Quitação</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th><th>Conciliação</th></tr></thead><tbody>' +
+      body + '</tbody></table></div>';
+    html += '<div class="copy-row" style="margin-top:0.8rem;"><button class="ghost" id="btn-baixar-historico">Baixar histórico completo (Excel)</button></div>';
+    card.innerHTML = html;
+
+    currentHistorico = exportRows;
+    document.getElementById('chk-so-dif').addEventListener('change', function () {
+      document.getElementById('recon-wrap').classList.toggle('only-diff', this.checked);
+    });
+    document.getElementById('btn-baixar-historico').addEventListener('click', function () {
+      downloadCSV(currentHistorico,
+        ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Date Closed', 'Ref', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Conciliacao'],
+        'historico_conciliado_' + s.searchValue);
+    });
+  }
+
   function renderHistoricoSection() {
     var card = document.getElementById('historico-card');
     if (!card || !searchState || searchState.histByTax === null) return;
@@ -699,6 +845,10 @@
     var nDiverg = valid.filter(function (r) { return histPriority(r) === 1; }).length;
     var saldoOpen = valid.filter(function (r) { return histPriority(r) === 0; }).reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
     var saldoDiverg = valid.filter(function (r) { return histPriority(r) === 1; }).reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
+
+    // Base ja carregada com 'Date Closed' (upload novo): mostra a conciliacao
+    // cobranca -> pagamento. Sem ela (upload antigo), cai na lista simples abaixo.
+    if (valid.some(function (r) { return r['Date Closed']; })) { renderReconciliacao(card, valid, s); return; }
 
     var distinctCompanies = {};
     valid.forEach(function (r) { if (r[s.individualField]) distinctCompanies[r[s.individualField]] = true; });
@@ -809,14 +959,31 @@
   // originais do export) - descartando de cara URLs/memos longos que nunca
   // sao usados aqui. Isso e o que evita estourar a memoria do navegador com
   // 2M+ linhas. 'Customer ID' e mantido so pra montar o mapa de CNPJ Matriz.
-  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status'];
+  // 'Date Closed' (data de quitacao) e 'Memo' entram so pra conciliar cobranca x
+  // pagamento: o Memo e reduzido na hora a um mes de referencia curto ('Ref',
+  // ex "2024-07") e descartado, pra nao pesar na memoria nem no historico.
+  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo'];
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
+
+  // Mes de referencia da cobranca, tirado do Memo da fatura:
+  // "Taxa da empresa para o periodo 2024-07-01 - 2024-07-31" -> "2024-07";
+  // "...period ended 2021-02-15" -> "2021-02"; senao a 1a data AAAA-MM-DD achada.
+  function refFromMemo(memo) {
+    var s = String(memo || '');
+    var m = s.match(/(\d{4})-(\d{2})-\d{2}\s*-\s*\d{4}-\d{2}-\d{2}/) || s.match(/ended\s+(\d{4})-(\d{2})/i) || s.match(/(\d{4})-(\d{2})-\d{2}/);
+    return m ? m[1] + '-' + m[2] : '';
+  }
+  function finishSlim(out) {
+    out['Ref'] = refFromMemo(out['Memo']);
+    out['Memo'] = '';
+    return out;
+  }
 
   function slimRow(r) {
     var out = {};
     SLIM_FIELDS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
-    return out;
+    return finishSlim(out);
   }
 
   // O Excel em Windows configurado em portugues do Brasil às vezes salva
@@ -885,7 +1052,7 @@
           var colIdx = neededIdx[k];
           rowObj[SLIM_FIELDS[k]] = (colIdx !== undefined && cols[colIdx] !== undefined) ? cols[colIdx] : '';
         }
-        out.push(rowObj);
+        out.push(finishSlim(rowObj));
       }
       onProgress(Math.min(i - 1, total), total);
       if (i < lines.length) {
@@ -1008,6 +1175,7 @@
         // funciona pra qualquer pais (nao depende de CNPJ existir).
         r['NetSuite Matriz'] = parentCustId;
         r['Date'] = excelSerialToDate(r['Date']);
+        r['Date Closed'] = excelSerialToDate(r['Date Closed']);
       }
       statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Processando linhas — ' + Math.round((idx / total) * 100) + '%...</div>';
       if (idx < total) {
