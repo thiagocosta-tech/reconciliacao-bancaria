@@ -322,7 +322,16 @@
     return out;
   }
 
+  // v2 (1 chamada por aba, filtrando os dois campos no servidor). Se o Apps
+  // Script ainda for a versao antiga (resposta sem v:2), cai no caminho antigo.
   function fetchByEitherField(sheetName, searchValue, individualField, matrizField, onData, onTimeout, timeoutMs) {
+    jsonp({ action: 'search', sheetName: sheetName, value: searchValue, field1: individualField, field2: matrizField }, function (data) {
+      if (data && data.v === 2) onData({ byTax: data.byTax || [], byMatriz: data.byMatriz || [] });
+      else fetchByEitherFieldLegacy(sheetName, searchValue, individualField, matrizField, onData, onTimeout, timeoutMs);
+    }, onTimeout, timeoutMs || 60000);
+  }
+
+  function fetchByEitherFieldLegacy(sheetName, searchValue, individualField, matrizField, onData, onTimeout, timeoutMs) {
     var byTax = null, byMatriz = null, gotError = false, pending = 2;
     function done() {
       pending--;
@@ -354,29 +363,37 @@
     statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Buscando...</div>';
     resultEl.innerHTML = '';
 
-    fetchByEitherField('Notas', searchValue, cfg.individualField, cfg.matrizField, function (notasResult) {
-      fetchByEitherField('Ajustes', searchValue, cfg.individualField, cfg.matrizField, function (ajustesResult) {
-        statusEl.innerHTML = '';
-        searchState = {
-          searchValue: searchValue,
-          individualField: cfg.individualField,
-          matrizField: cfg.matrizField,
-          notasByTax: notasResult.byTax,
-          notasByMatriz: notasResult.byMatriz,
-          ajustesByTax: ajustesResult.byTax,
-          ajustesByMatriz: ajustesResult.byMatriz,
-          histByTax: null,
-          histByMatriz: null,
-          viewMode: 'grupo'
-        };
-        renderTopSection();
-        loadHistorico(searchValue, cfg.individualField, cfg.matrizField);
-      }, function () {
-        statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel carregar os ajustes (timeout). Tente de novo.</div>';
-      });
-    }, function () {
-      statusEl.innerHTML = '<div class="status-msg bad">Nao foi possivel buscar (timeout). Tente de novo.</div>';
-    });
+    // Notas e Ajustes em paralelo (antes eram um depois do outro).
+    var notasResult = null, ajustesResult = null, failed = false;
+    function fail(msg) {
+      if (failed) return;
+      failed = true;
+      statusEl.innerHTML = '<div class="status-msg bad">' + msg + '</div>';
+    }
+    function maybeRender() {
+      if (failed || !notasResult || !ajustesResult) return;
+      statusEl.innerHTML = '';
+      searchState = {
+        searchValue: searchValue,
+        individualField: cfg.individualField,
+        matrizField: cfg.matrizField,
+        notasByTax: notasResult.byTax,
+        notasByMatriz: notasResult.byMatriz,
+        ajustesByTax: ajustesResult.byTax,
+        ajustesByMatriz: ajustesResult.byMatriz,
+        histByTax: null,
+        histByMatriz: null,
+        viewMode: 'grupo'
+      };
+      renderTopSection();
+      loadHistorico(searchValue, cfg.individualField, cfg.matrizField);
+    }
+    fetchByEitherField('Notas', searchValue, cfg.individualField, cfg.matrizField, function (res) {
+      notasResult = res; maybeRender();
+    }, function () { fail('Nao foi possivel buscar as notas (timeout). Tente de novo.'); });
+    fetchByEitherField('Ajustes', searchValue, cfg.individualField, cfg.matrizField, function (res) {
+      ajustesResult = res; maybeRender();
+    }, function () { fail('Nao foi possivel carregar os ajustes (timeout). Tente de novo.'); });
   });
 
   var currentNotas = [];
@@ -510,15 +527,90 @@
     }
   }
 
+  function historicoFailed() {
+    var card = document.getElementById('historico-card');
+    if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
+  }
+
+  // Historico v2: 1 requisicao por chunk (cada uma leve), varios chunks em
+  // paralelo, com nova tentativa e progresso na tela. A 1a resposta diz quantos
+  // chunks existem; se vier sem v:2 (Apps Script antigo), cai no caminho antigo.
   function loadHistorico(searchValue, individualField, matrizField) {
-    fetchByEitherField('Historico', searchValue, individualField, matrizField, function (result) {
-      searchState.histByTax = result.byTax;
-      searchState.histByMatriz = result.byMatriz;
-      renderHistoricoSection();
-    }, function () {
+    var searchRef = searchState; // descarta respostas de uma busca antiga
+    var CONCURRENCY = 4, RETRIES = 2, CHUNK_TIMEOUT = 60000;
+    var allTax = [], allMatriz = [], total = 0, next = 2, inFlight = 0, doneCount = 0, aborted = false;
+
+    function legacy() {
+      fetchByEitherFieldLegacy('Historico', searchValue, individualField, matrizField, function (result) {
+        if (searchState !== searchRef) return;
+        searchState.histByTax = result.byTax;
+        searchState.histByMatriz = result.byMatriz;
+        renderHistoricoSection();
+      }, historicoFailed, 60000);
+    }
+
+    function progress() {
       var card = document.getElementById('historico-card');
-      if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
-    }, 60000);
+      if (card && searchState === searchRef && searchState.histByTax === null) {
+        card.innerHTML = '<h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)... ' + doneCount + '/' + total + '</div>';
+      }
+    }
+
+    function finishIfDone() {
+      if (aborted || searchState !== searchRef) return;
+      if (doneCount >= total) {
+        searchState.histByTax = allTax;
+        searchState.histByMatriz = allMatriz;
+        renderHistoricoSection();
+      }
+    }
+
+    function requestChunk(index, attempt, onOk) {
+      jsonp({ action: 'historicoChunk', index: index, value: searchValue, field1: individualField, field2: matrizField }, function (data) {
+        if (aborted || searchState !== searchRef) return;
+        if (!data || data.v !== 2 || data.error) {
+          if (attempt < RETRIES) return requestChunk(index, attempt + 1, onOk);
+          aborted = true; return historicoFailed();
+        }
+        onOk(data);
+      }, function () {
+        if (aborted || searchState !== searchRef) return;
+        if (attempt < RETRIES) return requestChunk(index, attempt + 1, onOk);
+        aborted = true; historicoFailed();
+      }, CHUNK_TIMEOUT);
+    }
+
+    function absorb(data) {
+      Array.prototype.push.apply(allTax, data.byTax || []);
+      Array.prototype.push.apply(allMatriz, data.byMatriz || []);
+      doneCount++;
+      progress();
+    }
+
+    function pump() {
+      while (!aborted && inFlight < CONCURRENCY && next <= total) {
+        inFlight++;
+        requestChunk(next++, 0, function (data) {
+          inFlight--; absorb(data); pump(); finishIfDone();
+        });
+      }
+    }
+
+    // 1o chunk: tambem descobre o total (e detecta Apps Script antigo)
+    jsonp({ action: 'historicoChunk', index: 1, value: searchValue, field1: individualField, field2: matrizField }, function (data) {
+      if (searchState !== searchRef) return;
+      if (!data || data.v !== 2) return legacy();
+      if (data.error) return historicoFailed();
+      total = data.total || 1;
+      absorb(data);
+      pump(); finishIfDone();
+    }, function () {
+      if (searchState !== searchRef) return;
+      // tenta de novo o 1o chunk uma vez antes de desistir
+      requestChunk(1, 1, function (data) {
+        total = data.total || 1; absorb(data); pump(); finishIfDone();
+      });
+    }, CHUNK_TIMEOUT);
   }
 
   function renderHistoricoSection() {
