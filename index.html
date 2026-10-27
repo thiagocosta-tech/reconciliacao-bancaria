@@ -221,7 +221,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '27/10/2026 09:22';
+  var PROGRAM_UPDATED = '27/10/2026 11:05';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -650,20 +650,121 @@
     return t || Math.abs(parseNum(r['Paid']));
   }
 
+  // ---------- Vinculo pagamento x fatura por vencimento ----------
+  // O NetSuite aplica o pagamento na fatura mais antiga em aberto. Quando o cliente
+  // "pula" uma fatura, isso desloca todas as seguintes. A regra aqui: o pagamento
+  // pertence a fatura de mesmo valor cujo VENCIMENTO esta mais proximo da data do
+  // pagamento (a fatura pulada e a que fica sem pagamento = a que deve ser cobrada).
+  function dueOf(r) { return dateKey(r['Due Date']) || dateKey(r['Date']); }
+  function dayNum(k) {
+    if (!k) return 0;
+    return Math.round(Date.UTC(Math.floor(k / 10000), Math.floor(k / 100) % 100 - 1, k % 100) / 86400000);
+  }
+  function todayKey() { var t = new Date(); return t.getFullYear() * 10000 + (t.getMonth() + 1) * 100 + t.getDate(); }
+  function fmtKey(k) { return k ? ('0' + (k % 100)).slice(-2) + '/' + ('0' + (Math.floor(k / 100) % 100)).slice(-2) + '/' + Math.floor(k / 10000) : ''; }
+  function dueStatus(r) { var k = dueOf(r); return k && k < todayKey() ? 'Vencida' : 'Por vencer'; }
+
+  // Casa, em ordem, pagamentos e faturas minimizando a soma de |vencimento - data do pagamento|.
+  // Nao permite pagamento anterior a emissao da fatura. Itens sem par ficam de fora.
+  function matchByDue(invs, pays) {
+    var n = invs.length, k = pays.length;
+    if (!n || !k) return [];
+    var S = 100000, INF = 1e15;
+    var I = invs.slice().sort(function (x, y) { return dueOf(x) - dueOf(y) || dateKey(x['Date']) - dateKey(y['Date']); });
+    var P = pays.slice().sort(function (x, y) { return dateKey(x['Date']) - dateKey(y['Date']); });
+    function cost(i, j) {
+      if (dateKey(I[i]['Date']) > dateKey(P[j]['Date'])) return INF;
+      return Math.abs(dayNum(dueOf(I[i])) - dayNum(dateKey(P[j]['Date'])));
+    }
+    var dp = [], i, j;
+    for (i = 0; i <= n; i++) { dp.push(new Array(k + 1)); }
+    for (i = 0; i <= n; i++) dp[i][0] = i * S;
+    for (j = 0; j <= k; j++) dp[0][j] = j * S;
+    for (i = 1; i <= n; i++) {
+      for (j = 1; j <= k; j++) {
+        var best = Math.min(dp[i - 1][j] + S, dp[i][j - 1] + S);
+        var c = cost(i - 1, j - 1);
+        if (c < INF) best = Math.min(best, dp[i - 1][j - 1] + c);
+        dp[i][j] = best;
+      }
+    }
+    var out = [];
+    i = n; j = k;
+    while (i > 0 && j > 0) {
+      var c2 = cost(i - 1, j - 1);
+      if (c2 < INF && dp[i][j] === dp[i - 1][j - 1] + c2) { out.push({ inv: I[i - 1], pay: P[j - 1] }); i--; j--; }
+      else if (dp[i][j] === dp[i - 1][j] + S) i--;
+      else j--;
+    }
+    return out;
+  }
+  // Agrupa por valor (em centavos) e roda matchByDue em cada grupo. amtOf(inv) = valor da fatura a comparar.
+  function matchGroups(invs, pays, amtOf) {
+    var byAmt = {}, out = [];
+    invs.forEach(function (r) { var a = Math.round(amtOf(r) * 100); (byAmt[a] = byAmt[a] || { i: [], p: [] }).i.push(r); });
+    pays.forEach(function (r) { var a = Math.round(absAmt(r) * 100); (byAmt[a] = byAmt[a] || { i: [], p: [] }).p.push(r); });
+    Object.keys(byAmt).forEach(function (a) { out = out.concat(matchByDue(byAmt[a].i, byAmt[a].p)); });
+    return out;
+  }
+  // Faz o vinculo por empresa. Marca as linhas casadas em r.__m e devolve os pares.
+  function linkPayments(valid, fld) {
+    var pairs = [], byCo = {};
+    valid.forEach(function (r) {
+      delete r.__m;
+      var t = r['Transaction'];
+      if (t !== 'Invoice' && t !== 'Payment') return;
+      var co = byCo[r[fld] || ''] || (byCo[r[fld] || ''] = { inv: [], pay: [] });
+      if (t === 'Invoice') {
+        var tb = parseNum(r['Total Billed']);
+        if (tb > 0.02 && !(r['Status'] !== 'Open' && Math.abs(parseNum(r['Remaining'])) > 0.02)) co.inv.push(r);
+      } else if (absAmt(r) > 0.02) co.pay.push(r);
+    });
+    function take(ps, kind) { ps.forEach(function (p) { p.inv.__m = 1; p.pay.__m = 1; p.kind = kind; pairs.push(p); }); }
+    Object.keys(byCo).forEach(function (co) {
+      var c = byCo[co];
+      // 1) valor exato da fatura
+      take(matchGroups(c.inv, c.pay, function (r) { return parseNum(r['Total Billed']); }), 'total');
+      // 2) diferenca de ate 2 centavos (arredondamento)
+      var li = c.inv.filter(function (r) { return !r.__m; }), lp = c.pay.filter(function (r) { return !r.__m; });
+      lp.sort(function (x, y) { return dateKey(x['Date']) - dateKey(y['Date']); }).forEach(function (p) {
+        var bestI = null, bestD = Infinity;
+        li.forEach(function (v) {
+          if (v.__m || dateKey(v['Date']) > dateKey(p['Date'])) return;
+          if (Math.abs(parseNum(v['Total Billed']) - absAmt(p)) > 0.0201) return;
+          var d = Math.abs(dayNum(dueOf(v)) - dayNum(dateKey(p['Date'])));
+          if (d < bestD) { bestD = d; bestI = v; }
+        });
+        if (bestI) take([{ inv: bestI, pay: p }], 'total');
+      });
+      // 3) pagamento parcial: valor do pagamento = valor ja pago da fatura em aberto
+      li = c.inv.filter(function (r) { return !r.__m && r['Status'] === 'Open' && parseNum(r['Paid']) > 0.02; });
+      lp = c.pay.filter(function (r) { return !r.__m; });
+      take(matchGroups(li, lp, function (r) { return parseNum(r['Paid']); }), 'parcial');
+    });
+    return pairs;
+  }
+
   function renderReconciliacao(card, valid, s) {
     var fld = s.individualField;
     var distinct = {};
     valid.forEach(function (r) { if (r[fld]) distinct[r[fld]] = true; });
     var showAsGroup = Object.keys(distinct).length > 1;
 
+    var hasDue = valid.some(function (r) { return r['Due Date']; });
+    var pairs = hasDue ? linkPayments(valid, fld) : [];
+    if (!hasDue) valid.forEach(function (r) { delete r.__m; });
+    var pairedDays = {};
+    pairs.forEach(function (p) { pairedDays[(p.pay[fld] || '') + '|' + dateKey(p.pay['Date'])] = fmtKey(dateKey(p.pay['Date'])); });
+
     var open = [], diverg = [], groups = {};
     valid.forEach(function (r) {
+      if (r.__m) return;
       if (r['Status'] === 'Open') { open.push(r); return; }
       if (Math.abs(parseNum(r['Remaining'])) > 0.02) { diverg.push(r); return; }
       var isPay = r['Transaction'] === 'Payment';
       var day = dateKey(isPay ? r['Date'] : r['Date Closed']);
       var key = (r[fld] || '') + '|' + day;
-      var g = groups[key] || (groups[key] = { day: day, inv: [], pay: [], other: [] });
+      var g = groups[key] || (groups[key] = { day: day, inv: [], pay: [], other: [], co: key });
       if (isPay) g.pay.push(r); else if (r['Transaction'] === 'Invoice') g.inv.push(r); else g.other.push(r);
     });
 
@@ -683,20 +784,43 @@
       } else if (g.inv.length) {
         g.status = 'warn'; g.val = si;
         if (g.other.length) { g.cat = 'credito'; g.label = 'Quitada com nota de crédito (conferir)'; }
+        else if (pairedDays[g.co]) {
+          g.status = 'bad'; g.cat = 'sem_pagamento';
+          g.label = 'Fatura pulada — o pagamento de ' + pairedDays[g.co] + ' pertence a outra fatura · ' + dueStatus(g.inv[0]);
+        }
         else { g.cat = 'sem_pagamento'; g.label = 'Quitada sem pagamento nessa data'; }
       } else {
         g.status = 'ok'; g.cat = 'ok'; g.val = 0; g.label = 'Nota de crédito (sem pagamento)';
       }
       if (g.status === 'ok') nOk++; else nBad++;
     });
-    list.sort(function (a, b) { return b.day - a.day; }); // mais recente primeiro
+    // pares vinculados por vencimento
+    pairs.forEach(function (p) {
+      var inv = p.inv, pay = p.pay, g = { day: dateKey(pay['Date']), inv: [inv], pay: [pay], other: [], pairKind: p.kind };
+      var nsDay = dateKey(inv['Date Closed']), payDay = dateKey(pay['Date']);
+      if (p.kind === 'parcial') {
+        g.status = 'warn'; g.cat = 'parcial'; g.val = parseNum(inv['Remaining']);
+        g.label = 'Pago parcial ' + fmtBRL(parseNum(inv['Paid'])) + ' de ' + fmtBRL(parseNum(inv['Total Billed'])) + ' · ' + dueStatus(inv);
+        nBad++;
+      } else if (inv['Status'] === 'Open' && Math.abs(parseNum(inv['Remaining'])) > 0.02) {
+        g.status = 'warn'; g.cat = 'aplicar'; g.val = parseNum(inv['Remaining']);
+        g.label = 'Pago em ' + fmtKey(payDay) + ', mas ainda em aberto no NetSuite (aplicar o pagamento)';
+        nBad++;
+      } else {
+        g.status = 'ok'; g.cat = 'ok'; g.val = parseNum(inv['Total Billed']);
+        g.label = '✔ Bate por vencimento' + (nsDay && nsDay !== payDay ? ' · NetSuite quitou em ' + fmtKey(nsDay) : '');
+        nOk++;
+      }
+      list.push(g);
+    });
+    function sortKey(g) { return g.inv.length ? Math.max.apply(null, g.inv.map(dueOf)) : g.day; }
+    list.sort(function (a, b) { return sortKey(b) - sortKey(a) || b.day - a.day; }); // vencimento mais recente primeiro
 
-    function byDateDesc(a, b) { return dateKey(b['Date']) - dateKey(a['Date']); }
-    open.sort(byDateDesc);
-    diverg.sort(byDateDesc);
+    function byDueDesc(a, b) { return dueOf(b) - dueOf(a); }
+    open.sort(byDueDesc);
+    diverg.sort(byDueDesc);
     var saldoOpen = open.reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
     var saldoDiverg = diverg.reduce(function (t, r) { return t + parseNum(r['Remaining']); }, 0);
-
     var nCols = 9 + (showAsGroup ? 1 : 0);
     function rowHtml(r, cls, conc) {
       var isPay = r['Transaction'] === 'Payment';
@@ -705,7 +829,7 @@
       var h = '<tr class="' + cls + (isPay ? ' pay-row' : '') + '">';
       if (showAsGroup) h += '<td>' + escapeHtml(r['Company']) + '</td>';
       h += '<td>' + (isPay ? '↳ ' : '') + escapeHtml(r['Invoice #']) + '</td><td>' + escapeHtml(r['Transaction']) + '</td>' +
-        '<td title="' + refTitle + '">' + ref + '</td><td>' + escapeHtml(r['Date']) + '</td><td>' + (isPay ? '' : escapeHtml(r['Date Closed'])) + '</td>';
+        '<td title="' + refTitle + '">' + ref + '</td><td>' + escapeHtml(isPay ? r['Date'] : (r['Due Date'] || r['Date'])) + '</td><td>' + (isPay ? '' : escapeHtml(r['Date Closed'])) + '</td>';
       if (isPay) h += '<td class="num"></td>' + moneyTd(r['Total Billed']) + '<td class="num"></td>';
       else h += moneyTd(r['Total Billed']) + moneyTd(r['Paid']) + moneyTd(r['Remaining'], r['Status'] === 'Open' ? 'warn' : (Math.abs(parseNum(r['Remaining'])) > 0.02 ? 'bad' : ''));
       h += '<td>' + (conc ? '<span class="badge ' + conc.status + '">' + escapeHtml(conc.label) + '</span>' : '') + '</td></tr>';
@@ -713,7 +837,7 @@
     }
     function tableHtml(inner) {
       return '<div class="table-scroll recon"><table><thead><tr>' + (showAsGroup ? '<th>Empresa</th>' : '') +
-        '<th>Documento</th><th>Tipo</th><th>Mês ref./pago</th><th>Data</th><th>Quitação</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th><th>Conciliação</th></tr></thead><tbody>' +
+        '<th>Documento</th><th>Tipo</th><th>Mês ref./pago</th><th title="Fatura: data de vencimento (Due Date). Pagamento: data do pagamento.">Vencimento / Pgto</th><th>Quitação</th><th class="num">Cobrado</th><th class="num">Recebido</th><th class="num">Em aberto</th><th>Conciliação</th></tr></thead><tbody>' +
         inner + '</tbody></table></div>';
     }
 
@@ -724,11 +848,12 @@
     var cDiv = mk('fechada_com_saldo', 'Fechadas com saldo', 'saldo');
     var cDif = mk('diferenca', 'Diferença entre fatura e pagamento', 'diferença total');
     var cSemFat = mk('pagamento_sem_fatura', 'Pagamento sem fatura vinculada', 'sem fatura');
-    var cSemPg = mk('fatura_sem_pagamento', 'Fatura quitada sem pagamento na data', 'cobrado');
+    var cSemPg = mk('fatura_sem_pagamento', 'Fatura pulada / sem pagamento correspondente (cobrar)', 'cobrado');
+    var cAplic = mk('pago_em_aberto', 'Paga, mas ainda em aberto no NetSuite (aplicar pagamento)', 'saldo');
     var cCred = mk('quitada_com_credito', 'Quitada com nota de crédito (conferir)', 'cobrado');
     var cSemData = mk('sem_data_quitacao', 'Fatura quitada sem data de quitação', 'cobrado');
     var cOk = mk('conciliado', 'Conciliado', 'conciliado');
-    var byCat = { diferenca: cDif, sem_fatura: cSemFat, sem_pagamento: cSemPg, credito: cCred, sem_data: cSemData, ok: cOk };
+    var byCat = { diferenca: cDif, sem_fatura: cSemFat, sem_pagamento: cSemPg, credito: cCred, sem_data: cSemData, ok: cOk, parcial: cPar, aplicar: cAplic };
 
     function addFlat(c, r, conc) {
       r['Conciliacao'] = conc.label; r['Subcategoria'] = c.title;
@@ -736,8 +861,8 @@
     }
     open.forEach(function (r) {
       var paid = parseNum(r['Paid']);
-      if (paid > 0.02) addFlat(cPar, r, { status: 'warn', label: 'Pago parcial ' + fmtBRL(paid) + ' de ' + fmtBRL(parseNum(r['Total Billed'])) });
-      else addFlat(cOpen, r, { status: 'warn', label: 'Em aberto' });
+      if (paid > 0.02) addFlat(cPar, r, { status: 'warn', label: 'Pago parcial ' + fmtBRL(paid) + ' de ' + fmtBRL(parseNum(r['Total Billed'])) + ' · ' + dueStatus(r) });
+      else addFlat(cOpen, r, { status: 'warn', label: dueStatus(r) });
     });
     diverg.forEach(function (r) { addFlat(cDiv, r, { status: 'bad', label: 'Fechada, mas com saldo' }); });
     list.forEach(function (g) {
@@ -754,7 +879,7 @@
       c.count++; c.value += g.val || 0;
     });
 
-    var pendCats = [cOpen, cPar, cDiv, cDif, cSemFat, cSemPg, cCred, cSemData].filter(function (c) { return c.count > 0; });
+    var pendCats = [cOpen, cPar, cSemPg, cAplic, cDiv, cDif, cSemFat, cCred, cSemData].filter(function (c) { return c.count > 0; });
     var pendRows = [];
     pendCats.forEach(function (c) { pendRows = pendRows.concat(c.rows); });
     var pendCount = pendCats.reduce(function (t, c) { return t + c.count; }, 0);
@@ -772,7 +897,7 @@
     var namesList = Object.keys(companyNames).map(function (k) { return companyNames[k]; });
     var html = '<h2>' + (showAsGroup ? 'Grupo — ' + namesList.length + ' empresas na estrutura' : escapeHtml(namesList[0] || '(nome nao encontrado)')) + '</h2>';
     html += '<p class="hint">' + (showAsGroup ? 'Esse valor é de uma matriz — o resultado junta ela e todas as subsidiárias que apontam pra ela: ' + namesList.map(escapeHtml).join(', ') + '. ' : '') + valid.length + ' transações no histórico (inclusive fechadas).</p>';
-    html += '<p class="hint">Cada pagamento aparece logo abaixo das faturas que quitou (a data de quitação da fatura = a data do pagamento) e a soma é conferida. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. Em cima ficam as <strong>pendências</strong>, por subcategoria; embaixo, o que está <strong>conciliado</strong>.</p>';
+    html += '<p class="hint">Cada pagamento é vinculado à fatura de mesmo valor cujo <strong>vencimento</strong> está mais próximo da data do pagamento (o NetSuite aplica na fatura mais antiga; quando o cliente pula uma fatura, ela aparece como <strong>pulada</strong> para cobrança). O que não tem fatura de mesmo valor é conferido pela data de quitação e pela soma. O mês de referência da cobrança vem do Memo da fatura; o do pagamento é o mês da data dele. Em cima ficam as <strong>pendências</strong>, por subcategoria; embaixo, o que está <strong>conciliado</strong>.</p>';
     html += '<div class="summary-grid">' +
       summaryBox('Em aberto (Open)', nOpenItems + ' · ' + fmtBRL(saldoOpen), nOpenItems ? 'warn' : '') +
       summaryBox('Fechadas com saldo', diverg.length + ' · ' + fmtBRL(saldoDiverg), diverg.length ? 'bad' : '') +
@@ -791,7 +916,7 @@
     html += '</div>';
     card.innerHTML = html;
 
-    var DL_COLS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Date Closed', 'Ref', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Subcategoria', 'Conciliacao'];
+    var DL_COLS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Date Closed', 'Ref', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Subcategoria', 'Conciliacao'];
     var dlMap = { '__pendencias': { rows: pendRows, name: 'em_aberto_tudo' } };
     pendCats.concat([cOk]).forEach(function (c) { dlMap[c.key] = { rows: c.rows, name: (c === cOk ? 'conciliado' : 'em_aberto_' + c.key) }; });
     card.querySelectorAll('[data-dl]').forEach(function (btn) {
@@ -959,7 +1084,7 @@
   // pagamento: o Memo e reduzido na hora a um mes de referencia curto ('Ref',
   // ex "2024-07") e descartado, pra nao pesar na memoria nem no historico.
   var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo'];
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref'];
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
   // Mes de referencia da cobranca, tirado do Memo da fatura:
@@ -1184,6 +1309,7 @@
         r['NetSuite Matriz'] = parentCustId;
         r['Date'] = excelSerialToDate(r['Date']);
         r['Date Closed'] = excelSerialToDate(r['Date Closed']);
+        r['Due Date'] = excelSerialToDate(r['Due Date']);
       }
       statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Processando linhas — ' + Math.round((idx / total) * 100) + '%...</div>';
       if (idx < total) {
