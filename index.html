@@ -221,7 +221,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '20/10/2026 14:34';
+  var PROGRAM_UPDATED = '27/10/2026 09:22';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -1065,6 +1065,18 @@
     if (files.length === 0) return;
     var statusEl = document.getElementById('upload-status');
     document.getElementById('upload-preview').innerHTML = '';
+
+    // Arquivos .xlsx grandes estouram a memoria do navegador (erro 'Out of memory').
+    // Recusa antes de tentar ler e orienta a usar CSV.
+    var XLSX_MAX_MB = 40;
+    var bigXlsx = files.filter(function (fl) { return !fl.name.toLowerCase().endsWith('.csv') && fl.size > XLSX_MAX_MB * 1024 * 1024; });
+    if (bigXlsx.length) {
+      statusEl.innerHTML = '<div class="status-msg bad">Arquivo(s) muito grande(s) para ler como Excel: ' +
+        bigXlsx.map(function (fl) { return escapeHtml(fl.name) + ' (' + Math.round(fl.size / 1048576) + ' MB)'; }).join(', ') +
+        '. O navegador fica sem memoria com .xlsx desse tamanho. Exporte ou salve os arquivos como <strong>.csv</strong> e envie de novo (o CSV e lido em partes e aguenta o historico completo).</div>';
+      evt.target.value = '';
+      return;
+    }
 
     var allSlimRows = [];
     var fileIdx = 0;
