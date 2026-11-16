@@ -5,101 +5,83 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reconciliação Bancária · SBS Collection</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400..700&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
-    --paper: #faf6f8;
-    --paper-raised: #ffffff;
-    --paper-sunk: #f1e7ec;
-    --ink: #24121c;
-    --ink-soft: #7d6570;
-    --line: #e3d3db;
-    --accent: #620032;
-    --accent-soft: #6200321a;
-    --ok: #2e6b46;
-    --ok-bg: #2e6b461a;
-    --bad: #a23f3f;
-    --bad-bg: #a23f3f1a;
-    --warn: #a3771f;
-    --warn-bg: #a3771f1a;
-    --focus: #4a6fa5;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --paper: #1b1216;
-      --paper-raised: #251720;
-      --paper-sunk: #140c11;
-      --ink: #f1e6ec;
-      --ink-soft: #ac93a1;
-      --line: #3c2a34;
-      --accent: #e187b5;
-      --accent-soft: #e187b522;
-      --ok: #6fbd8c;
-      --ok-bg: #6fbd8c22;
-      --bad: #d98080;
-      --bad-bg: #d9808022;
-      --warn: #d9b25f;
-      --warn-bg: #d9b25f22;
-      --focus: #86a9e0;
-    }
-  }
-  :root[data-theme="dark"] {
-    --paper: #1b1216;
-    --paper-raised: #251720;
-    --paper-sunk: #140c11;
-    --ink: #f1e6ec;
-    --ink-soft: #ac93a1;
-    --line: #3c2a34;
-    --accent: #e187b5;
-    --accent-soft: #e187b522;
-    --ok: #6fbd8c;
-    --ok-bg: #6fbd8c22;
-    --bad: #d98080;
-    --bad-bg: #d9808022;
-    --warn: #d9b25f;
-    --warn-bg: #d9b25f22;
-    --focus: #86a9e0;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--paper); color: var(--ink); font-family: 'Public Sans', system-ui, sans-serif; }
+    color-scheme: light;
+    --paper: #FBF8EC;          /* canvas off-white quente */
+    --paper-raised: #FFFFFF;   /* cartões e superfícies */
+    --paper-sunk: #F6F1E1;     /* áreas rebaixadas (inputs, caixas) */
+    --ink: #1B1340;            /* Dark Purple: textos e cabeçalhos */
+    --ink-soft: #6B6485;
+    --line: #ECE0CD;
+    --accent: #F2496B;         /* Wellhub Magenta */
+    --accent-hover: #590931;
+    --accent-soft: #F2496B1a;
+    --ok: #0C8046;
+    --ok-bg: #F2FFCC;
+    --ok-bg-strong: #DCFF79;
+    --bad: #D6294F;            /* magenta alerta, escurecido p/ legibilidade de texto */
+    --bad-bg: #FFEBF1;
+    --warn: #8A5A00;
+    --warn-bg: #FFF3CC;
+    --focus: #1B1340;
+    --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  }  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
   .wrap { max-width: 980px; margin: 0 auto; padding: 2.5rem 1.5rem 5rem; }
   header.top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.4rem; }
-  .brand { display: flex; align-items: center; gap: 0.55rem; font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .brand { display: flex; align-items: center; gap: 0.55rem; font-family: var(--font-ui); font-weight: 800; font-size: 1.05rem; letter-spacing: -0.02em; }
   .brand img { width: 26px; height: 26px; display: block; }
   .brand span { color: var(--accent); }
-  h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 1.9rem; letter-spacing: -0.01em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
+  header.top { padding-bottom: 1rem; border-bottom: 3px solid var(--accent); margin-bottom: 1.4rem; }
+  h1 { font-family: var(--font-ui); font-weight: 800; font-size: 2rem; letter-spacing: -0.02em; margin: 0.3rem 0 0.2rem; text-wrap: balance; }
   .sub { color: var(--ink-soft); font-size: 0.95rem; margin: 0 0 1.8rem; }
   .recon tr.pay-row td { background: var(--paper-sunk); }
   .recon tr.grp-first td { border-top: 2px solid var(--line); }
-  .recon tr.sec td { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; text-transform: uppercase; color: var(--ink-soft); padding-top: 1rem; border-top: 0; }
-  .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
-  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .recon tr.sec td { font-family: var(--font-mono); font-size: 0.72rem; text-transform: uppercase; color: var(--ink-soft); padding-top: 1rem; border-top: 0; }
+  .badge { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 4px; white-space: nowrap; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); font-weight: 600; }
   .badge.bad { background: var(--bad-bg); color: var(--bad); }
   .badge.warn { background: var(--warn-bg); color: var(--warn); }
   .block { margin-top: 1.6rem; }
   .block-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.8rem; }
-  .block-title { font-family: 'Fraunces', serif; font-size: 1.05rem; font-weight: 600; margin: 0; }
+  .block-title { font-family: var(--font-ui); font-weight: 700; letter-spacing: -0.02em; font-size: 1.05rem; font-weight: 600; margin: 0; }
   .block-title.pend { color: var(--warn); }
   .block-title.ok { color: var(--ok); }
   .block-pend { border-top: 3px solid var(--warn); padding-top: 1rem; }
   .block-ok { border-top: 3px solid var(--ok); padding-top: 1rem; }
   .subcat { border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem 1rem 0.4rem; margin-bottom: 1rem; background: var(--paper-sunk); }
   .subcat-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
-  .subcat-meta { display: block; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
+  .subcat-meta { display: block; font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); margin-top: 0.15rem; }
   .only-diff-toggle { display: inline-block; font-size: 0.82rem; color: var(--ink-soft); margin: 0 0 0.6rem; cursor: pointer; }
-  .prog-version { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); }
-  .meta-line { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
+  .saldo-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 1.2rem 0; }
+  .saldo-grid .summary-box .value { font-size: 1.7rem; font-weight: 700; }
+  .summary-box .sub-note { font-size: 0.78rem; color: var(--ink-soft); margin-top: 0.35rem; }
+  .company-list { display: grid; gap: 0.5rem; margin-top: 0.7rem; max-height: 320px; overflow-y: auto; }
+  .company-pick { display: flex; justify-content: space-between; gap: 1rem; text-align: left; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 0.65rem 0.9rem; font: inherit; color: var(--ink); cursor: pointer; }
+  .company-pick:hover { border-color: var(--accent); background: var(--bad-bg); }
+  .company-pick .code { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+  .open-table td { white-space: nowrap; }
+  .open-table td.code { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
+  .open-table th.num { text-align: right; }
+  .open-table tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .prog-version { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); }
+  .meta-line { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
 
   .tabs { display: flex; gap: 0.4rem; border-bottom: 1px solid var(--line); margin-bottom: 1.8rem; }
-  .tab { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; letter-spacing: 0.02em; padding: 0.7rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--ink-soft); cursor: pointer; }
-  .tab.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab { font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 0.02em; padding: 0.7rem 1rem; background: none; border: none; border-bottom: 2px solid transparent; color: var(--ink-soft); cursor: pointer; }
+  .tab { font-family: var(--font-ui); font-size: 0.9rem; font-weight: 600; }
+  .tab:hover { color: var(--accent-hover); }
+  .tab.active { color: var(--ink); border-bottom: 3px solid var(--accent); font-weight: 700; }
   .tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .panel { display: none; }
   .panel.active { display: block; }
 
-  .card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 10px; padding: 1.4rem 1.5rem; margin-bottom: 1.4rem; }
-  .card h2 { font-family: 'Fraunces', serif; font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
+  .card { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 1px 2px #1B134010; padding: 1.4rem 1.5rem; margin-bottom: 1.4rem; }
+  .card h2 { font-family: var(--font-ui); font-weight: 700; letter-spacing: -0.02em; font-size: 1.15rem; font-weight: 600; margin: 0 0 1rem; }
   .field { margin-bottom: 1rem; }
   .field label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.35rem; }
   .field input, .field select, .field textarea {
@@ -114,7 +96,7 @@
     background: var(--accent); color: #fff; border: none; border-radius: 6px;
     padding: 0.65rem 1.3rem; font-size: 0.9rem; font-weight: 600; cursor: pointer;
   }
-  button.primary:hover { filter: brightness(1.06); }
+  button.primary:hover { background: var(--accent-hover); }
   button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
   button.ghost { background: none; border: 1px solid var(--line); color: var(--ink); border-radius: 6px; padding: 0.5rem 0.9rem; font-size: 0.82rem; cursor: pointer; }
   .view-toggle { display: flex; gap: 0.4rem; margin-bottom: 1rem; }
@@ -125,21 +107,24 @@
 
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--line); }
-  th { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
-  td.num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; text-align: right; }
+  th { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); }
+  td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
   .table-scroll { overflow-x: auto; }
 
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
-  .summary-box { background: var(--paper-sunk); border-radius: 8px; padding: 0.9rem 1rem; }
-  .summary-box .label { font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.3rem; }
-  .summary-box .value { font-family: 'JetBrains Mono', monospace; font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .summary-box { background: var(--paper-raised); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.1rem; }
+  .summary-box.ok { background: var(--ok-bg); border-color: var(--ok-bg-strong); }
+  .summary-box.ok .value { color: var(--ok); }
+  .summary-box .label { font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.3rem; }
+  .summary-box .value { font-family: var(--font-mono); font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
   .summary-box.warn .value { color: var(--warn); }
+  .summary-box.bad { background: var(--bad-bg); border-color: #F2496B33; }
   .summary-box.bad .value { color: var(--bad); }
 
   .ajuste-item { border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; margin-bottom: 0.8rem; background: var(--paper-sunk); }
-  .ajuste-item .tipo { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.25rem 0.5rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn); margin-bottom: 0.5rem; }
+  .ajuste-item .tipo { display: inline-block; font-family: var(--font-mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 0.25rem 0.5rem; border-radius: 4px; background: var(--warn-bg); color: var(--warn); margin-bottom: 0.5rem; }
   .ajuste-item .explicacao { font-size: 0.88rem; margin: 0.4rem 0 0.8rem; color: var(--ink); }
-  .ajuste-item .valores { font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.6rem; }
+  .ajuste-item .valores { font-family: var(--font-mono); font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.6rem; }
   .decisao-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
   .decisao-row input[type=text] { flex: 1; min-width: 180px; padding: 0.4rem 0.6rem; border-radius: 5px; border: 1px solid var(--line); background: var(--paper-raised); color: var(--ink); font-size: 0.82rem; }
   .decisao-feita { font-size: 0.82rem; padding: 0.5rem 0.7rem; border-radius: 6px; background: var(--ok-bg); color: var(--ok); }
@@ -161,7 +146,7 @@
     <div class="prog-version" id="prog-version"></div>
   </header>
   <h1>Reconciliação Bancária</h1>
-  <p class="sub">Consulta por CNPJ, saldo real em aberto e ajustes que precisam de revisão.</p>
+  <p class="sub">Consulta por Customer ID, Tax ID ou nome da empresa: saldo em aberto, notas para cobrança e ajustes que precisam de revisão.</p>
   <div class="meta-line" id="meta-line">Base: carregando informação...</div>
 
   <div class="tabs" role="tablist">
@@ -173,14 +158,11 @@
   <div class="panel active" data-panel="consulta">
     <div class="card">
       <h2>Buscar empresa</h2>
-      <div class="view-toggle" id="search-mode-toggle" style="margin-bottom:1.1rem;">
-        <button data-searchmode="cnpj" class="active">CNPJ (Brasil)</button>
-        <button data-searchmode="tagus">ID NetSuite (outros países)</button>
-      </div>
       <div class="row">
-        <div class="field">
-          <label for="cnpj-input" id="cnpj-input-label">CNPJ</label>
-          <input type="text" id="cnpj-input" placeholder="ex: 12.345.678/0001-99" inputmode="numeric">
+        <div class="field" style="flex:2;">
+          <label for="cnpj-input" id="cnpj-input-label">Cliente</label>
+          <input type="text" id="cnpj-input" placeholder="Customer ID (CUS_409182), CNPJ / Tax ID ou nome da empresa" autocomplete="off">
+          <div class="hint" style="margin:0.35rem 0 0;">Aceita Customer ID, Tax ID (com ou sem pontuação) ou parte do nome da empresa.</div>
         </div>
         <div class="field">
           <label for="autor-input">Seu nome (fica salvo neste navegador)</label>
@@ -221,7 +203,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '27/10/2026 11:05';
+  var PROGRAM_UPDATED = '16/11/2026 14:08';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -367,17 +349,49 @@
   };
   var currentSearchMode = 'cnpj';
 
-  document.querySelectorAll('#search-mode-toggle button').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      currentSearchMode = btn.dataset.searchmode;
-      document.querySelectorAll('#search-mode-toggle button').forEach(function (b) { b.classList.toggle('active', b === btn); });
-      var cfg = SEARCH_MODES[currentSearchMode];
-      document.getElementById('cnpj-input-label').textContent = cfg.label;
-      var input = document.getElementById('cnpj-input');
-      input.placeholder = cfg.placeholder;
-      input.setAttribute('inputmode', cfg.inputMode);
-    });
-  });
+  // Busca inteligente: um unico campo. Descobre sozinho se o texto e Customer ID
+  // (CUS...), Tax ID (so numeros/pontuacao) ou nome da empresa.
+  function detectQuery(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return { kind: 'empty' };
+    if (/^CUS[\s_\-]?\d+$/i.test(s)) return { kind: 'id', mode: 'tagus', value: s };
+    if (/^[\d.\-\/\s]+$/.test(s)) {
+      var digits = s.replace(/\D/g, '');
+      if (digits.length < 6) return { kind: 'invalid', msg: 'Número muito curto: digite o Tax ID completo (ou o Customer ID, ex.: CUS_409182).' };
+      return { kind: 'id', mode: 'cnpj', value: digits };
+    }
+    if (s.length < 3) return { kind: 'invalid', msg: 'Digite pelo menos 3 letras do nome da empresa.' };
+    return { kind: 'name', value: s };
+  }
+
+  // Resolve um nome em empresas candidatas (1 chunk do historico por requisicao).
+  function findCompanies(name, onDone, onFail, onProgress) {
+    var CONCURRENCY = 4, RETRIES = 2, TIMEOUT = 60000;
+    var found = {}, total = 0, next = 2, inFlight = 0, doneCount = 0, aborted = false;
+    function absorb(d) {
+      (d.companies || []).forEach(function (c) { found[(c.customerId || '') + '|' + c.company] = c; });
+      doneCount++; onProgress && onProgress(doneCount, total);
+    }
+    function finish() { if (!aborted && doneCount >= total) onDone(Object.keys(found).map(function (k) { return found[k]; })); }
+    function req(i, attempt, ok) {
+      jsonp({ action: 'findCompany', index: i, value: name }, function (d) {
+        if (aborted) return;
+        if (!d || d.v !== 3 || d.error) { if (attempt < RETRIES) return req(i, attempt + 1, ok); aborted = true; return onFail(d && d.v !== 3 ? 'old' : 'err'); }
+        ok(d);
+      }, function () {
+        if (aborted) return;
+        if (attempt < RETRIES) return req(i, attempt + 1, ok);
+        aborted = true; onFail('err');
+      }, TIMEOUT);
+    }
+    function pump() {
+      while (!aborted && inFlight < CONCURRENCY && next <= total) {
+        inFlight++;
+        req(next++, 0, function (d) { inFlight--; absorb(d); pump(); finish(); });
+      }
+    }
+    req(1, 0, function (d) { total = d.total || 1; absorb(d); pump(); finish(); });
+  }
 
   function dedupeByInternalId(rows) {
     var seen = {}, out = [];
@@ -416,16 +430,52 @@
 
   var searchState = null; // { searchValue, individualField, matrizField, notasByTax, notasByMatriz, ajustesByTax, ajustesByMatriz, histByTax, histByMatriz, viewMode }
 
-  document.getElementById('btn-buscar').addEventListener('click', function () {
-    var cfg = SEARCH_MODES[currentSearchMode];
-    var raw = document.getElementById('cnpj-input').value.trim();
-    var searchValue = cfg.normalize(raw);
+  var searchToken = 0; // invalida buscas antigas quando o usuario busca de novo
+
+  function onBuscar() {
+    var q = detectQuery(document.getElementById('cnpj-input').value);
     var statusEl = document.getElementById('busca-status');
     var resultEl = document.getElementById('resultado-area');
-    if (!searchValue) {
-      statusEl.innerHTML = '<div class="status-msg bad">Digite um valor pra buscar.</div>';
-      return;
+    var myToken = ++searchToken;
+    if (q.kind === 'empty') { statusEl.innerHTML = '<div class="status-msg bad">Digite um Customer ID, Tax ID ou nome da empresa.</div>'; return; }
+    if (q.kind === 'invalid') { statusEl.innerHTML = '<div class="status-msg bad">' + escapeHtml(q.msg) + '</div>'; return; }
+    if (q.kind === 'id') { runSearch(SEARCH_MODES[q.mode], SEARCH_MODES[q.mode].normalize(q.value)); return; }
+
+    // nome: primeiro descobre quais empresas casam, depois busca a escolhida
+    resultEl.innerHTML = '';
+    statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Procurando empresas com "' + escapeHtml(q.value) + '"...</div>';
+    findCompanies(q.value, function (list) {
+      if (myToken !== searchToken) return;
+      if (list.length === 0) { statusEl.innerHTML = '<div class="status-msg bad">Nenhuma empresa encontrada com "' + escapeHtml(q.value) + '". Confira a grafia ou busque pelo Tax ID / Customer ID.</div>'; return; }
+      list.sort(function (a, b) { return String(a.company).localeCompare(String(b.company), 'pt-BR'); });
+      if (list.length === 1) { pickCompany(list[0]); return; }
+      statusEl.innerHTML = '<div class="status-msg info">' + list.length + (list.length >= 100 ? '+' : '') + ' empresas encontradas — escolha uma:</div><div class="company-list">' +
+        list.map(function (c, i) {
+          return '<button type="button" class="company-pick" data-i="' + i + '"><strong>' + escapeHtml(c.company) + '</strong><span class="code">' + escapeHtml(c.customerId || '') + (c.taxId ? ' · ' + escapeHtml(c.taxId) : '') + '</span></button>';
+        }).join('') + '</div>';
+      statusEl.querySelectorAll('.company-pick').forEach(function (b) { b.addEventListener('click', function () { pickCompany(list[+b.dataset.i]); }); });
+    }, function (why) {
+      if (myToken !== searchToken) return;
+      statusEl.innerHTML = '<div class="status-msg bad">' + (why === 'old'
+        ? 'A busca por nome ainda não está ativa no servidor (falta publicar a nova versão do Apps Script). Use o Customer ID ou o Tax ID por enquanto.'
+        : 'Não foi possível buscar por nome agora (timeout). Tente de novo ou use o Customer ID / Tax ID.') + '</div>';
+    }, function (done, total) {
+      if (myToken !== searchToken) return;
+      statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Procurando empresas com "' + escapeHtml(q.value) + '"... ' + done + '/' + total + '</div>';
+    });
+
+    function pickCompany(c) {
+      if (c.customerId) { document.getElementById('cnpj-input').value = c.customerId; runSearch(SEARCH_MODES.tagus, String(c.customerId).trim()); }
+      else if (normCNPJ(c.taxId)) { document.getElementById('cnpj-input').value = c.taxId; runSearch(SEARCH_MODES.cnpj, normCNPJ(c.taxId)); }
+      else statusEl.innerHTML = '<div class="status-msg bad">Essa empresa não tem Customer ID nem Tax ID na base.</div>';
     }
+  }
+  document.getElementById('btn-buscar').addEventListener('click', onBuscar);
+  document.getElementById('cnpj-input').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') onBuscar(); });
+
+  function runSearch(cfg, searchValue) {
+    var statusEl = document.getElementById('busca-status');
+    var resultEl = document.getElementById('resultado-area');
     statusEl.innerHTML = '<div class="status-msg info"><span class="spinner"></span>Buscando...</div>';
     resultEl.innerHTML = '';
 
@@ -460,7 +510,7 @@
     fetchByEitherField('Ajustes', searchValue, cfg.individualField, cfg.matrizField, function (res) {
       ajustesResult = res; maybeRender();
     }, function () { fail('Nao foi possivel carregar os ajustes (timeout). Tente de novo.'); });
-  });
+  }
 
   var currentNotas = [];
   var currentHistorico = [];
@@ -501,6 +551,115 @@
     });
   }
 
+  // ---------- Saldos em aberto + tabela de cobranca ----------
+  // Vencido (Overdue): faturas Open com Due Date anterior a hoje.
+  // A vencer (Not Due): faturas Open com vencimento hoje ou depois.
+  // Tabela na ordem exata pedida pela operacao (13 colunas), pronta pra copiar.
+  function isBrRow(r) {
+    var g = String(r['GEOs'] || '') + ' ' + String(r['Subsidiary'] || '');
+    if (/brazil|brasil|\bBR\b/i.test(g)) return true;
+    var d = normCNPJ(r['Tax ID']);
+    return d.length === 14 || d.length === 11;
+  }
+  function periodFromMemo(memo) {
+    var s = String(memo || '').trim();
+    var m = s.match(/\d{4}-\d{2}-\d{2}\s*-\s*\d{4}-\d{2}-\d{2}/);
+    if (!m) return s;
+    var p = m[0].split(/\s*-\s*(?=\d{4}-)/);
+    return fmtDateBR(p[0]) + ' a ' + fmtDateBR(p[1]);
+  }
+  function fmtDateBR(v) { var k = dateKey(v); return k ? fmtKey(k) : String(v == null ? '' : v); }
+  function fmtNumTsv(n) { return n.toFixed(2).replace('.', ','); }
+  function openInvoices(notas) {
+    return notas.filter(function (r) {
+      return r['Transaction'] === 'Invoice' && String(r['Status']).toLowerCase() === 'open' && parseNum(r['Remaining']) !== 0;
+    }).sort(function (a, b) { return dueOf(a) - dueOf(b); });
+  }
+  function openTableModel(invs) {
+    var allBr = invs.length > 0 && invs.every(isBrRow);
+    var anyBr = invs.some(isBrRow);
+    var taxLabel = allBr ? 'CNPJ' : (anyBr ? 'CNPJ / Tax ID' : 'Tax ID');
+    var nfLabel = allBr ? 'NF' : (anyBr ? 'NF / Latam - Preprinted number' : 'Latam - Preprinted number');
+    var cols = [
+      { h: 'Internal ID', v: function (r) { return r['Internal ID']; } },
+      { h: 'Período cobrado', v: function (r) { return periodFromMemo(r['Memo']); } },
+      { h: taxLabel, v: function (r) { return r['Tax ID']; }, mono: true },
+      { h: 'Token', v: function (r) { return r['CRM Invoice #']; } },
+      { h: 'Invoice Type', v: function (r) { return r['Invoice Type']; } },
+      { h: 'Invoice #', v: function (r) { return r['Invoice #']; } },
+      { h: 'Date', v: function (r) { return fmtDateBR(r['Date']); } },
+      { h: 'Due Date', v: function (r) { return fmtDateBR(r['Due Date']); } },
+      { h: nfLabel, v: function (r) { return r['Latam - Preprinted number']; } },
+      { h: 'Total Billed', num: true, v: function (r) { return parseNum(r['Total Billed']); } },
+      { h: 'Paid', num: true, v: function (r) { return parseNum(r['Paid']); } },
+      { h: 'Remaining', num: true, v: function (r) { return parseNum(r['Remaining']); } },
+      { h: 'Status', v: function (r) { return r['Status']; } }
+    ];
+    return cols;
+  }
+  var currentOpenTsv = '';
+  function copyText(text, onOk, onFail) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      ta.remove(); ok ? onOk() : onFail();
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(onOk, fallback);
+    else fallback();
+  }
+  function openCardsHtml(notas) {
+    var invs = openInvoices(notas), today = todayKey();
+    var overdue = 0, notDue = 0, nOver = 0, nNot = 0;
+    invs.forEach(function (r) {
+      var amt = parseNum(r['Remaining']);
+      if (dueOf(r) && dueOf(r) < today) { overdue += amt; nOver++; } else { notDue += amt; nNot++; }
+    });
+    var h = '<div class="summary-grid saldo-grid">' +
+      '<div class="summary-box bad"><div class="label">Total em aberto vencido (Overdue)</div><div class="value">' + fmtBRL(overdue) + '</div><div class="sub-note">' + nOver + (nOver === 1 ? ' nota' : ' notas') + ' com vencimento anterior a hoje</div></div>' +
+      '<div class="summary-box ok"><div class="label">Total em aberto a vencer (Not Due)</div><div class="value">' + fmtBRL(notDue) + '</div><div class="sub-note">' + nNot + (nNot === 1 ? ' nota' : ' notas') + ' ainda dentro do prazo</div></div>' +
+      '</div>';
+    h += '<div class="card" id="open-card"><div class="block-head"><h2 style="margin:0;">Notas em aberto para cobrança</h2>' +
+      (invs.length ? '<button class="primary" id="btn-copy-open" type="button">Copiar Tabela para Cliente</button>' : '') + '</div>';
+    if (!invs.length) {
+      h += '<div class="empty">Nenhuma invoice em aberto para este cliente.</div></div>';
+      currentOpenTsv = '';
+      return h;
+    }
+    var cols = openTableModel(invs);
+    h += '<div class="table-scroll"><table class="open-table"><thead><tr>' + cols.map(function (c) { return '<th' + (c.num ? ' class="num"' : '') + '>' + escapeHtml(c.h) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    var tsv = [cols.map(function (c) { return c.h; }).join('\t')];
+    invs.forEach(function (r) {
+      var overdueRow = dueOf(r) && dueOf(r) < today;
+      h += '<tr class="' + (overdueRow ? 'row-overdue' : '') + '">' + cols.map(function (c) {
+        var val = c.v(r);
+        if (c.num) return '<td class="num">' + fmtBRL(val) + '</td>';
+        return '<td class="' + (c.mono || /ID|#|Token/.test(c.h) ? 'code' : '') + '">' + escapeHtml(String(val == null ? '' : val)) + '</td>';
+      }).join('') + '</tr>';
+      tsv.push(cols.map(function (c) {
+        var val = c.v(r);
+        return c.num ? fmtNumTsv(val) : String(val == null ? '' : val).replace(/[\t\r\n]+/g, ' ').trim();
+      }).join('\t'));
+    });
+    h += '</tbody></table></div>';
+    var missing = invs.some(function (r) { return !r['CRM Invoice #'] && !r['Invoice Type'] && !r['Memo']; });
+    if (missing) h += '<p class="hint" style="margin-top:0.8rem;">Algumas colunas (Período cobrado, Token, Invoice Type, NF) aparecem vazias até a base ser atualizada de novo na aba "Atualizar dados" com os campos novos.</p>';
+    h += '</div>';
+    currentOpenTsv = tsv.join('\n');
+    return h;
+  }
+  function wireOpenCard() {
+    var b = document.getElementById('btn-copy-open');
+    if (!b) return;
+    b.addEventListener('click', function () {
+      copyText(currentOpenTsv, function () {
+        var old = b.textContent; b.textContent = 'Copiado!';
+        setTimeout(function () { b.textContent = old; }, 1800);
+      }, function () { alert('Não foi possível copiar automaticamente. Selecione a tabela e copie com Ctrl+C.'); });
+    });
+  }
+
   function renderTopSection() {
     var resultEl = document.getElementById('resultado-area');
     var s = searchState;
@@ -514,14 +673,16 @@
     currentNotas = notas;
 
     if (notas.length === 0 && ajustes.length === 0) {
-      resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') +
+      resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') + openCardsHtml(notas) +
         '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
       if (isGroup) wireViewToggle(resultEl);
+      wireOpenCard();
       return;
     }
 
     var html = '';
     if (isGroup) html += viewToggleHtml(mode);
+    html += openCardsHtml(notas);
 
     if (ajustes.length > 0) {
       html += '<div class="card"><h2>Reconciliação — ' + ajustes.length + ' ' + (ajustes.length === 1 ? 'item encontrado' : 'itens encontrados') + ' pra revisar</h2>';
@@ -535,6 +696,7 @@
     html += '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
 
     resultEl.innerHTML = html;
+    wireOpenCard();
 
     if (isGroup) wireViewToggle(resultEl);
 
@@ -1073,7 +1235,7 @@
   }
 
   // ---------- TAB 2: atualizar dados ----------
-  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary'];
+  var CLEAN_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Memo', 'CRM Invoice #', 'Invoice Type', 'Latam - Preprinted number'];
   var AJUSTE_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Parent ID', 'Invoice #', 'Transaction', 'Status', 'Total Billed', 'Paid', 'Remaining', 'Tipo de Ajuste', 'Explicacao'];
 
   // Guardamos so os campos realmente usados de cada linha (17, nao os 38
@@ -1083,7 +1245,7 @@
   // 'Date Closed' (data de quitacao) e 'Memo' entram so pra conciliar cobranca x
   // pagamento: o Memo e reduzido na hora a um mes de referencia curto ('Ref',
   // ex "2024-07") e descartado, pra nao pesar na memoria nem no historico.
-  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo'];
+  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo', 'CRM Invoice #', 'Invoice Type', 'Latam - Preprinted number'];
   var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
