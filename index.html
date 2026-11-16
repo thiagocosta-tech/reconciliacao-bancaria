@@ -68,6 +68,39 @@
   .open-table td.code { font-family: var(--font-mono); font-size: 0.8rem; white-space: nowrap; }
   .open-table th.num { text-align: right; }
   .open-table tr.row-overdue td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+  .claims { padding: 0; }
+  .claims > summary { cursor: pointer; padding: 1.1rem 1.5rem; list-style: none; display: flex; align-items: center; gap: 0.7rem; }
+  .claims > summary::-webkit-details-marker { display: none; }
+  .claims > summary::before { content: '▸'; color: var(--accent); font-size: 1rem; transition: transform .15s; }
+  .claims[open] > summary::before { transform: rotate(90deg); }
+  .claims-title { font-weight: 700; font-size: 1.05rem; letter-spacing: -0.02em; }
+  .claims-opt { font-size: 0.72rem; font-weight: 600; background: var(--accent-soft); color: var(--accent-hover); border-radius: 999px; padding: 0.15rem 0.6rem; }
+  .claims > :not(summary) { margin-left: 1.5rem; margin-right: 1.5rem; }
+  .claims > .claims-actions { margin-bottom: 1.4rem; }
+  .claim-group { border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem 1rem; margin-bottom: 0.8rem; background: var(--paper-sunk); }
+  .claim-group-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; }
+  .claim-row { display: flex; gap: 0.7rem; align-items: flex-end; flex-wrap: wrap; }
+  .claim-col { flex: 1; min-width: 240px; }
+  .claim-col label { display: block; font-size: 0.78rem; font-weight: 600; margin-bottom: 0.3rem; }
+  .claim-arrow { font-size: 1.4rem; color: var(--accent); padding-bottom: 0.35rem; }
+  .chip-box { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.5rem; min-height: 2.5rem; }
+  .chip-box:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .chip-box input { flex: 1; min-width: 140px; border: 0; outline: 0; background: transparent; font-family: var(--font-mono); font-size: 0.85rem; color: var(--ink); padding: 0.25rem 0.2rem; }
+  .chip { display: inline-flex; align-items: center; gap: 0.3rem; background: var(--accent-soft); color: var(--accent-hover); font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; border-radius: 6px; padding: 0.2rem 0.3rem 0.2rem 0.55rem; }
+  .chip-x { border: 0; background: none; color: var(--accent-hover); cursor: pointer; font-size: 1rem; line-height: 1; padding: 0 0.25rem; border-radius: 4px; }
+  .chip-x:hover { background: #F2496B33; }
+  button.ghost.small { padding: 0.25rem 0.6rem; font-size: 0.75rem; }
+  .claims-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.4rem; }
+  .check-box { border-radius: 10px; padding: 0.7rem 1rem; font-size: 0.86rem; margin-bottom: 1rem; }
+  .check-box.ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok-bg-strong); }
+  .check-box.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid #F2496B33; }
+  .claim-report { margin-bottom: 1rem; display: grid; gap: 0.4rem; }
+  .claim-line { font-size: 0.84rem; padding: 0.5rem 0.8rem; border-radius: 8px; background: var(--paper-raised); border: 1px solid var(--line); }
+  .claim-line.ok { border-left: 4px solid var(--ok); }
+  .claim-line.warn { border-left: 4px solid var(--warn); }
+  .claim-line.bad { border-left: 4px solid var(--bad); }
+  .eng-warn { font-size: 0.82rem; color: var(--ink-soft); margin-bottom: 1rem; }
+  .eng-warn summary { cursor: pointer; font-weight: 600; color: var(--warn); }
   .prog-version { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); }
   .meta-line { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-soft); margin-bottom: 1.6rem; }
 
@@ -173,6 +206,17 @@
       <div id="busca-status"></div>
     </div>
 
+    <details class="card claims" id="claims-card">
+      <summary><span class="claims-title">Pagamentos alegados pelo cliente</span> <span class="claims-opt">opcional</span></summary>
+      <p class="hint">Informe só os <strong>códigos</strong>: o pagamento (ex.: PBR_638939) e a(s) nota(s) que o cliente diz ter quitado (ex.: INBR_606008 + INBR_642699). A ferramenta busca data, valor, vencimento e memo sozinha. Use <strong>+ Adicionar outro pagamento</strong> se o cliente mandou mais de um comprovante: cada grupo fica separado dos outros.</p>
+      <div id="claims-groups"></div>
+      <div class="claims-actions">
+        <button class="ghost" type="button" id="btn-add-group">+ Adicionar outro pagamento</button>
+        <button class="primary" type="button" id="btn-apply-claims">Aplicar e recalcular</button>
+        <button class="ghost" type="button" id="btn-clear-claims">Limpar</button>
+      </div>
+    </details>
+
     <div id="resultado-area"></div>
   </div>
 
@@ -203,7 +247,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '16/11/2026 14:08';
+  var PROGRAM_UPDATED = '16/11/2026 15:15';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -489,6 +533,7 @@
     function maybeRender() {
       if (failed || !notasResult || !ajustesResult) return;
       statusEl.innerHTML = '';
+      resetClaims();
       searchState = {
         searchValue: searchValue,
         individualField: cfg.individualField,
@@ -551,6 +596,167 @@
     });
   }
 
+// ====ENGINE-BEGIN====
+  // ---------- Motor de conciliacao (AllAR) ----------
+  // Objetivo: descobrir quais notas o cliente de fato NAO pagou. Usa os grupos
+  // informados pelo analista (pagamento(s) -> nota(s)) como ancora de verdade,
+  // retira do historico o que nao e do cliente (Journal de saida) e aplica o
+  // restante dos pagamentos/creditos nas notas mais antigas primeiro (FIFO por
+  // vencimento). Funcoes puras: recebem linhas e devolvem o resultado.
+  function engSig(memo) { return String(memo || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 12); }
+  function engCode(v) { return String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase(); }
+  function engCmType(memo) {
+    var m = String(memo || '');
+    if (/TAGUS\s*REFUND|CHARGEBACK/i.test(m)) return 'refund';
+    if (/Reference\s*VOID/i.test(m)) return 'void';
+    if (/Tax\s*retention|Withholding/i.test(m)) return 'tax';
+    if (/CleanUp/i.test(m)) return 'cleanup';
+    if (/Non-?\s*collectible|Write-?off\s*Adjustment/i.test(m)) return 'noncollectible';
+    if (/^\s*Credit\s*Memo/i.test(m)) return 'cancel';
+    return 'adjust';
+  }
+  function engPayKind(memo) {
+    var m = String(memo || '');
+    if (/Arquivo\s*Retorno/i.test(m)) return 'boleto';
+    if (/PSP_|Adyen/i.test(m)) return 'cartao';
+    return 'transferencia';
+  }
+  function addYears(key, n) { return key + n * 10000; }
+
+  function reconcileAR(rows, groups, opts) {
+    opts = opts || {};
+    var today = opts.today || todayKey();
+    var warnings = [], ignored = [];
+    var invs = [], pays = [], cms = [], jes = [];
+    var ours = {};
+    rows.forEach(function (r) {
+      [r['Customer ID'], r['NetSuite Matriz']].forEach(function (c) { var k = String(c || '').trim().split(/\s+/)[0]; if (/^CUS/i.test(k)) ours[k.toUpperCase()] = 1; });
+      var t = r['Transaction'], rec = {
+        row: r, code: engCode(r['Invoice #']), token: String(r['CRM Invoice #'] || '').trim(), date: dateKey(r['Date']),
+        due: dateKey(r['Due Date']) || dateKey(r['Date']), total: parseNum(r['Total Billed']), status: String(r['Status'] || '').toLowerCase(),
+        memo: String(r['Memo'] || ''), closed: dateKey(r['Date Closed'])
+      };
+      if (t === 'Invoice') { rec.net = rec.total; rec.rem = rec.total; invs.push(rec); }
+      else if (t === 'Payment') pays.push(rec);
+      else if (t === 'Credit Memo') cms.push(rec);
+      else if (t === 'Journal') jes.push(rec);
+    });
+    var byCode = {};
+    invs.concat(pays, cms, jes).forEach(function (x) { if (x.code) byCode[x.code] = x; });
+
+    // pagamentos validos: so "Deposited"
+    var validPays = pays.filter(function (p) {
+      if (p.status !== 'deposited') { ignored.push({ code: p.code, why: 'Pagamento ' + (p.row['Status'] || 'sem status') + ' (nao depositado)' }); return false; }
+      return p.total > 0;
+    });
+    // assinatura dominante de Memo dos pagamentos (referencia do "padrao do cliente")
+    var sigCount = {}, dominant = '';
+    validPays.forEach(function (p) { var s = engSig(p.memo); if (s) sigCount[s] = (sigCount[s] || 0) + 1; });
+    Object.keys(sigCount).forEach(function (s) { if (!dominant || sigCount[s] > sigCount[dominant]) dominant = s; });
+
+    // Journals: direcao pelo Memo ("Transfer from X to Y"); sem isso, pelo sinal
+    var jeOut = [], excludedPay = {};
+    jes.forEach(function (j) {
+      var m = j.memo.match(/from\s+(CUS\w+)\s+to\s+(CUS\w+)/i), dir = null;
+      if (m) { var f = m[1].toUpperCase(), t2 = m[2].toUpperCase(); if (ours[f] && !ours[t2]) dir = 'out'; else if (ours[t2] && !ours[f]) dir = 'in'; }
+      if (!dir) dir = j.total < 0 ? 'out' : 'in';
+      var amt = Math.abs(j.total);
+      if (dir === 'in') { validPays.push({ row: j.row, code: j.code, token: '', date: j.date, due: j.date, total: amt, status: 'deposited', memo: j.memo, closed: 0, je: true }); return; }
+      jeOut.push(j);
+      var cand = validPays.filter(function (p) {
+        return !excludedPay[p.code] && Math.abs(p.total - amt) <= 0.01 && engSig(p.memo) !== dominant && (!j.date || !p.date || p.date <= j.date);
+      }).sort(function (a, b) { return b.date - a.date; })[0];
+      if (cand) { excludedPay[cand.code] = j.code; warnings.push('Pagamento ' + cand.code + ' (' + fmtBRL(cand.total) + ') desconsiderado: transferido para outra carteira pelo Journal ' + j.code + ' (Memo diferente do padrao do cliente).'); }
+      else warnings.push('Journal ' + j.code + ' (saida de ' + fmtBRL(amt) + ') sem pagamento correspondente com Memo fora do padrao: conferir manualmente.');
+    });
+    validPays = validPays.filter(function (p) { return !excludedPay[p.code]; });
+
+    // Credit Memos: abatem a nota a que estao aplicadas
+    function invForCm(c, type) {
+      var hit = null;
+      var postCockpit = c.date >= 20250101 && (type === 'adjust' || type === 'cancel');
+      if (postCockpit && c.closed) {
+        var sameDay = invs.filter(function (i) { return i.date === c.closed && i.rem > 0; });
+        if (sameDay.length) hit = sameDay.sort(function (a, b) { return Math.abs(a.net - Math.abs(c.total)) - Math.abs(b.net - Math.abs(c.total)); })[0];
+      }
+      if (!hit && c.token) hit = invs.filter(function (i) { return i.token && i.token === c.token; })[0] || null;
+      return hit;
+    }
+    var pendingCredit = 0, nonCollect = {}, writtenOffOld = {};
+    cms.forEach(function (c) {
+      var type = engCmType(c.memo), amt = Math.abs(c.total);
+      if (type === 'refund') { ignored.push({ code: c.code, why: 'Reembolso/estorno: nao e credito para abater notas' }); return; }
+      if (c.status === 'open') { pendingCredit += amt; warnings.push('Credit Memo ' + c.code + ' (' + fmtBRL(amt) + ') pendente de aplicacao: credito a favor do cliente, nao abatido.'); return; }
+      var inv = invForCm(c, type);
+      if (!inv) { warnings.push('Credit Memo ' + c.code + ' (' + fmtBRL(amt) + ') sem nota vinculada pelo Token/Date Closed: nao abatido.'); return; }
+      if (type === 'noncollectible') {
+        // perda contabil: a nota continua devida, salvo se tiver mais de 2 anos (nao cobrar)
+        if (inv.date && inv.date < addYears(today, -2)) { inv.net = Math.max(0, inv.net - amt); inv.rem = inv.net; writtenOffOld[inv.code] = 1; }
+        else nonCollect[inv.code] = amt;
+        return;
+      }
+      inv.net = Math.max(0, inv.net - amt); inv.rem = inv.net;
+    });
+
+    // Ancoras: grupos informados pelo analista
+    var anchored = {}, groupReports = [], pool = 0;
+    var usedPay = {};
+    (groups || []).forEach(function (g) {
+      var rep = { pays: [], invs: [], missing: [], excluded: [], payTotal: 0, invTotal: 0, leftover: 0, status: 'ok' };
+      var gp = [], gi = [];
+      (g.pays || []).forEach(function (c) {
+        var code = engCode(c), x = byCode[code];
+        if (!x || validPays.every(function (p) { return p.code !== code; })) {
+          if (x && excludedPay[code]) rep.excluded.push(c); else rep.missing.push(c); return;
+        }
+        gp.push(x); rep.pays.push(c);
+      });
+      (g.invs || []).forEach(function (c) {
+        var code = engCode(c), x = invs.filter(function (i) { return i.code === code; })[0];
+        if (!x) { rep.missing.push(c); return; }
+        gi.push(x); rep.invs.push(c);
+      });
+      gp.forEach(function (p) { if (!usedPay[p.code]) { usedPay[p.code] = 1; rep.payTotal += p.total; } });
+      gi.sort(function (a, b) { return a.due - b.due; });
+      var avail = rep.payTotal;
+      gi.forEach(function (i) {
+        rep.invTotal += i.net;
+        var t = Math.min(i.rem, avail); i.rem -= t; avail -= t; anchored[i.code] = 1;
+      });
+      rep.leftover = Math.max(0, avail); pool += rep.leftover;
+      if (rep.missing.length || rep.excluded.length) rep.status = 'nao_encontrado';
+      else if (Math.abs(rep.payTotal - rep.invTotal) > 0.02) rep.status = rep.payTotal > rep.invTotal ? 'sobra' : 'falta';
+      groupReports.push(rep);
+    });
+
+    // Restante: pagamentos nao ancorados + sobras, nas notas mais antigas primeiro
+    validPays.forEach(function (p) { if (!usedPay[p.code]) pool += p.total; });
+    var open = invs.filter(function (i) { return i.rem > 0.01; }).sort(function (a, b) { return a.due - b.due || a.date - b.date || (a.code < b.code ? -1 : 1); });
+    open.forEach(function (i) { var t = Math.min(i.rem, Math.max(0, pool)); i.rem -= t; pool -= t; });
+
+    var unpaid = [], overdue = 0, notDue = 0;
+    invs.forEach(function (i) {
+      if (i.rem <= 0.01) return;
+      if (writtenOffOld[i.code]) { ignored.push({ code: i.code, why: 'Saldo de nota incobravel com mais de 2 anos: nao cobrar' }); return; }
+      var isOver = i.due && i.due < today;
+      unpaid.push({ rec: i, row: i.row, net: i.net, paid: i.net - i.rem, remaining: i.rem, overdue: !!isOver });
+      if (isOver) overdue += i.rem; else notDue += i.rem;
+    });
+    unpaid.sort(function (a, b) { return a.rec.due - b.rec.due; });
+
+    // conferencia com o NetSuite: Overdue do sistema + Journals de saida em aberto
+    var sysOver = 0;
+    invs.forEach(function (i) { if (i.status === 'open' && i.due && i.due < today) sysOver += parseNum(i.row['Remaining']); });
+    var ncSum = 0; Object.keys(nonCollect).forEach(function (k) { var i = invs.filter(function (x) { return x.code === k; })[0]; if (i && i.rem > 0.01 && i.due < today) ncSum += i.rem; });
+    var jeOpen = 0; jeOut.forEach(function (j) { if (j.status !== 'fully applied') jeOpen += Math.abs(parseNum(j.row['Remaining']) || j.total); });
+    return {
+      unpaid: unpaid, overdue: overdue, notDue: notDue, groups: groupReports, warnings: warnings, ignored: ignored,
+      systemOverdue: sysOver, journalOutOpen: jeOpen, writeOffCollectible: ncSum, expectedOverdue: sysOver + jeOpen + ncSum,
+      balanced: Math.abs(overdue - (sysOver + jeOpen + ncSum)) <= 0.02, unallocatedCredit: Math.max(0, pool), pendingCredit: pendingCredit
+    };
+  }
+// ====ENGINE-END====
+
   // ---------- Saldos em aberto + tabela de cobranca ----------
   // Vencido (Overdue): faturas Open com Due Date anterior a hoje.
   // A vencer (Not Due): faturas Open com vencimento hoje ou depois.
@@ -563,10 +769,10 @@
   }
   function periodFromMemo(memo) {
     var s = String(memo || '').trim();
-    var m = s.match(/\d{4}-\d{2}-\d{2}\s*-\s*\d{4}-\d{2}-\d{2}/);
-    if (!m) return s;
-    var p = m[0].split(/\s*-\s*(?=\d{4}-)/);
-    return fmtDateBR(p[0]) + ' a ' + fmtDateBR(p[1]);
+    var m = s.match(/(\d{4}-\d{2}-\d{2})\s*(?:-|a|to)\s*(\d{4}-\d{2}-\d{2})/);
+    if (m) return fmtDateBR(m[1]) + ' a ' + fmtDateBR(m[2]);
+    var e = s.match(/(?:^ate\s+|finalizado\s+em\s+|ended\s+)(\d{4}-\d{2}-\d{2})/i);
+    return e ? 'até ' + fmtDateBR(e[1]) : s;
   }
   function fmtDateBR(v) { var k = dateKey(v); return k ? fmtKey(k) : String(v == null ? '' : v); }
   function fmtNumTsv(n) { return n.toFixed(2).replace('.', ','); }
@@ -609,18 +815,153 @@
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(onOk, fallback);
     else fallback();
   }
-  function openCardsHtml(notas) {
-    var invs = openInvoices(notas), today = todayKey();
-    var overdue = 0, notDue = 0, nOver = 0, nNot = 0;
-    invs.forEach(function (r) {
-      var amt = parseNum(r['Remaining']);
-      if (dueOf(r) && dueOf(r) < today) { overdue += amt; nOver++; } else { notDue += amt; nNot++; }
+  // ---------- Vinculos informados pelo analista (pagamento -> notas) ----------
+  var claimGroups = [{ pays: [], invs: [] }];
+  function splitCodes(text) {
+    return String(text || '').split(/[\s,;+]+/).map(function (c) { return c.trim().toUpperCase(); }).filter(function (c) { return c.length >= 3; });
+  }
+  function chipsHtml(list, kind, gi) {
+    return list.map(function (c, ci) {
+      return '<span class="chip">' + escapeHtml(c) + '<button type="button" class="chip-x" data-g="' + gi + '" data-k="' + kind + '" data-c="' + ci + '" aria-label="Remover ' + escapeHtml(c) + '">×</button></span>';
+    }).join('');
+  }
+  function renderClaims(focus) {
+    var box = document.getElementById('claims-groups');
+    if (!box) return;
+    box.innerHTML = claimGroups.map(function (g, gi) {
+      return '<div class="claim-group"><div class="claim-group-head"><strong>Pagamento ' + (gi + 1) + '</strong>' +
+        (claimGroups.length > 1 ? '<button type="button" class="ghost small" data-rm-group="' + gi + '">Remover</button>' : '') + '</div>' +
+        '<div class="claim-row">' +
+          '<div class="claim-col"><label>Código do pagamento</label><div class="chip-box" data-box="pays" data-g="' + gi + '">' + chipsHtml(g.pays, 'pays', gi) + '<input type="text" data-in="pays" data-g="' + gi + '" placeholder="PBR_..." autocomplete="off"></div></div>' +
+          '<div class="claim-arrow" aria-hidden="true">→</div>' +
+          '<div class="claim-col"><label>Nota(s) que ele quitou</label><div class="chip-box" data-box="invs" data-g="' + gi + '">' + chipsHtml(g.invs, 'invs', gi) + '<input type="text" data-in="invs" data-g="' + gi + '" placeholder="INBR_... (Enter, espaço ou + para adicionar outra)" autocomplete="off"></div></div>' +
+        '</div></div>';
+    }).join('');
+    box.querySelectorAll('.chip-x').forEach(function (b) {
+      b.addEventListener('click', function () { claimGroups[+b.dataset.g][b.dataset.k].splice(+b.dataset.c, 1); renderClaims({ g: +b.dataset.g, k: b.dataset.k }); });
     });
+    box.querySelectorAll('[data-rm-group]').forEach(function (b) {
+      b.addEventListener('click', function () { claimGroups.splice(+b.dataset.rmGroup, 1); if (!claimGroups.length) claimGroups.push({ pays: [], invs: [] }); renderClaims(); });
+    });
+    box.querySelectorAll('input[data-in]').forEach(function (inp) {
+      function commit() {
+        var codes = splitCodes(inp.value);
+        if (!codes.length) { inp.value = ''; return; }
+        var list = claimGroups[+inp.dataset.g][inp.dataset.in];
+        codes.forEach(function (c) { if (list.indexOf(c) === -1) list.push(c); });
+        renderClaims({ g: +inp.dataset.g, k: inp.dataset.in });
+      }
+      inp.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Enter' || ev.key === ',' || ev.key === ' ' || ev.key === '+') { if (inp.value.trim()) { ev.preventDefault(); commit(); } else if (ev.key === 'Enter') { ev.preventDefault(); applyClaims(); } }
+        else if (ev.key === 'Backspace' && !inp.value) { var l = claimGroups[+inp.dataset.g][inp.dataset.in]; if (l.length) { l.pop(); renderClaims({ g: +inp.dataset.g, k: inp.dataset.in }); } }
+      });
+      inp.addEventListener('paste', function () { setTimeout(commit, 0); });
+      inp.addEventListener('blur', function () { if (inp.value.trim()) commit(); });
+    });
+    if (focus) { var f = box.querySelector('input[data-in="' + focus.k + '"][data-g="' + focus.g + '"]'); if (f) f.focus(); }
+  }
+  function applyClaims() {
+    // pega o que ficou digitado e ainda nao virou chip
+    document.querySelectorAll('#claims-groups input[data-in]').forEach(function (inp) {
+      var codes = splitCodes(inp.value), list = claimGroups[+inp.dataset.g][inp.dataset.in];
+      codes.forEach(function (c) { if (list.indexOf(c) === -1) list.push(c); }); inp.value = '';
+    });
+    renderClaims();
+    if (!searchState) { alert('Faça a busca do cliente primeiro; depois aplique os pagamentos.'); return; }
+    refreshOpenSection();
+    var sec = document.getElementById('open-section'); if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function resetClaims() { claimGroups = [{ pays: [], invs: [] }]; renderClaims(); }
+  document.getElementById('btn-add-group').addEventListener('click', function () { claimGroups.push({ pays: [], invs: [] }); renderClaims({ g: claimGroups.length - 1, k: 'pays' }); });
+  document.getElementById('btn-apply-claims').addEventListener('click', applyClaims);
+  document.getElementById('btn-clear-claims').addEventListener('click', function () { resetClaims(); if (searchState) refreshOpenSection(); });
+  renderClaims();
+  var lastEngNote = '';
+  function activeClaimGroups() { return claimGroups.filter(function (g) { return g.pays.length || g.invs.length; }); }
+  function histRowsCurrent() {
+    var s = searchState;
+    if (!s || s.histByTax === null) return [];
+    var isGroup = isRealGroup(s.notasByTax, s.notasByMatriz, s.individualField) || isRealGroup(s.ajustesByTax, s.ajustesByMatriz, s.individualField);
+    var mode = isGroup ? s.viewMode : 'individual';
+    return dedupeByInternalId(mode === 'grupo' ? s.histByTax.concat(s.histByMatriz) : s.histByTax).filter(function (r) { return !r.error; });
+  }
+  function engineForCurrent() {
+    lastEngNote = '';
+    var gs = activeClaimGroups();
+    if (!gs.length) return null;
+    if (searchState && searchState.histFailed) { lastEngNote = 'nohist'; return null; }
+    if (!searchState || searchState.histByTax === null) { lastEngNote = 'wait'; return null; }
+    var rows = histRowsCurrent();
+    if (!rows.length) { lastEngNote = 'nohist'; return null; }
+    if (!rows.some(function (r) { return r['Memo'] || r['CRM Invoice #']; })) { lastEngNote = 'oldbase'; return null; }
+    try { return reconcileAR(rows, gs, {}); } catch (e) { lastEngNote = 'error:' + e.message; return null; }
+  }
+  function engExtrasHtml(eng) {
+    var parts = ['Overdue no NetSuite ' + fmtBRL(eng.systemOverdue)];
+    if (eng.journalOutOpen) parts.push('Journal de saída em aberto ' + fmtBRL(eng.journalOutOpen));
+    if (eng.writeOffCollectible) parts.push('perdas contábeis a cobrar ' + fmtBRL(eng.writeOffCollectible));
+    var h = '<div class="check-box ' + (eng.balanced ? 'ok' : 'bad') + '">' + (eng.balanced
+      ? '✓ Conferência: a soma das notas vencidas bate com o NetSuite (' + escapeHtml(parts.join(' + ')) + ' = ' + fmtBRL(eng.expectedOverdue) + ').'
+      : '⚠ Não fechou: notas vencidas somam ' + fmtBRL(eng.overdue) + ', mas o esperado era ' + escapeHtml(parts.join(' + ')) + ' = ' + fmtBRL(eng.expectedOverdue) + ' (diferença de ' + fmtBRL(eng.overdue - eng.expectedOverdue) + '). Veja os avisos abaixo.') + '</div>';
+    if (eng.groups.length) {
+      h += '<div class="claim-report">';
+      eng.groups.forEach(function (g, i) {
+        var pre = '<strong>Pagamento ' + (i + 1) + '</strong> ' + escapeHtml(g.pays.join(' + ') || '—') + ' → ' + escapeHtml(g.invs.join(' + ') || '—') + ': ';
+        var msg, cls = 'ok';
+        if (g.status === 'ok') msg = '✓ ' + fmtBRL(g.payTotal) + ' cobre ' + fmtBRL(g.invTotal) + '.';
+        else if (g.status === 'sobra') { msg = fmtBRL(g.payTotal) + ' pago para ' + fmtBRL(g.invTotal) + ' de notas: a sobra de ' + fmtBRL(g.leftover) + ' foi aplicada nas notas mais antigas em aberto.'; cls = 'warn'; }
+        else if (g.status === 'falta') { msg = fmtBRL(g.payTotal) + ' pago para ' + fmtBRL(g.invTotal) + ' de notas: faltam ' + fmtBRL(g.invTotal - g.payTotal) + ', que continuam em aberto.'; cls = 'bad'; }
+        else {
+          msg = '⚠ ' + (g.missing.length ? 'não encontrado(s) nesta carteira: ' + escapeHtml(g.missing.join(', ')) + '. ' : '') + (g.excluded.length ? escapeHtml(g.excluded.join(', ')) + ' foi desconsiderado (transferido por Journal). ' : '');
+          cls = 'bad';
+        }
+        h += '<div class="claim-line ' + cls + '">' + pre + msg + '</div>';
+      });
+      h += '</div>';
+    }
+    if (eng.warnings.length) {
+      h += '<details class="eng-warn"><summary>' + eng.warnings.length + (eng.warnings.length === 1 ? ' aviso' : ' avisos') + ' do cálculo</summary><ul>' +
+        eng.warnings.map(function (w) { return '<li>' + escapeHtml(w) + '</li>'; }).join('') + '</ul></details>';
+    }
+    return h;
+  }
+  function openSectionHtml(notas) { return '<div id="open-section">' + openCardsHtml(notas, engineForCurrent()) + '</div>'; }
+  function refreshOpenSection() {
+    var el = document.getElementById('open-section');
+    if (!el || !searchState) return;
+    el.innerHTML = openCardsHtml(currentNotas, engineForCurrent());
+    wireOpenCard();
+  }
+
+  function openCardsHtml(notas, eng) {
+    var today = todayKey(), invs, overdue = 0, notDue = 0, nOver = 0, nNot = 0;
+    if (eng) {
+      invs = eng.unpaid.map(function (u) {
+        var r = {}; Object.keys(u.row).forEach(function (k) { r[k] = u.row[k]; });
+        r['Paid'] = u.paid; r['Remaining'] = u.remaining; r['Status'] = 'Open';
+        if (u.overdue) nOver++; else nNot++;
+        return r;
+      });
+      overdue = eng.overdue; notDue = eng.notDue;
+    } else {
+      invs = openInvoices(notas);
+      invs.forEach(function (r) {
+        var amt = parseNum(r['Remaining']);
+        if (dueOf(r) && dueOf(r) < today) { overdue += amt; nOver++; } else { notDue += amt; nNot++; }
+      });
+    }
     var h = '<div class="summary-grid saldo-grid">' +
       '<div class="summary-box bad"><div class="label">Total em aberto vencido (Overdue)</div><div class="value">' + fmtBRL(overdue) + '</div><div class="sub-note">' + nOver + (nOver === 1 ? ' nota' : ' notas') + ' com vencimento anterior a hoje</div></div>' +
       '<div class="summary-box ok"><div class="label">Total em aberto a vencer (Not Due)</div><div class="value">' + fmtBRL(notDue) + '</div><div class="sub-note">' + nNot + (nNot === 1 ? ' nota' : ' notas') + ' ainda dentro do prazo</div></div>' +
       '</div>';
-    h += '<div class="card" id="open-card"><div class="block-head"><h2 style="margin:0;">Notas em aberto para cobrança</h2>' +
+    if (eng) h += engExtrasHtml(eng);
+    else if (lastEngNote === 'wait') h += '<div class="status-msg info"><span class="spinner"></span>Aguardando o histórico completo para conciliar os pagamentos informados... (por enquanto, mostrando as notas em aberto no NetSuite)</div>';
+    else if (lastEngNote === 'oldbase') h += '<div class="status-msg bad">A base atual ainda não tem Memo e Token no histórico, então a conciliação ficaria imprecisa. Atualize a base na aba "Atualizar dados" (reenvie os arquivos AllAR) e busque de novo.</div>';
+    else if (lastEngNote === 'nohist') h += '<div class="status-msg bad">Sem histórico completo para esta busca: não foi possível conciliar os pagamentos informados.</div>';
+    else if (/^error:/.test(lastEngNote)) h += '<div class="status-msg bad">Erro ao conciliar: ' + escapeHtml(lastEngNote.slice(6)) + '</div>';
+    h += '<div class="card" id="open-card"><div class="block-head"><div><h2 style="margin:0;">' + (eng ? 'Notas realmente em aberto para cobrança' : 'Notas em aberto para cobrança (segundo o NetSuite)') + '</h2>' +
+      (eng ? '<div class="hint" style="margin:0.25rem 0 0;">Considerando os pagamentos informados; o restante dos pagamentos foi aplicado nas notas mais antigas primeiro.</div>'
+           : '<div class="hint" style="margin:0.25rem 0 0;">Informe em "Pagamentos alegados pelo cliente" quais pagamentos quitaram quais notas para identificar as notas realmente sem pagamento.</div>') + '</div>' +
       (invs.length ? '<button class="primary" id="btn-copy-open" type="button">Copiar Tabela para Cliente</button>' : '') + '</div>';
     if (!invs.length) {
       h += '<div class="empty">Nenhuma invoice em aberto para este cliente.</div></div>';
@@ -648,8 +989,7 @@
     h += '</div>';
     currentOpenTsv = tsv.join('\n');
     return h;
-  }
-  function wireOpenCard() {
+  }  function wireOpenCard() {
     var b = document.getElementById('btn-copy-open');
     if (!b) return;
     b.addEventListener('click', function () {
@@ -673,7 +1013,7 @@
     currentNotas = notas;
 
     if (notas.length === 0 && ajustes.length === 0) {
-      resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') + openCardsHtml(notas) +
+      resultEl.innerHTML = (isGroup ? viewToggleHtml(mode) : '') + openSectionHtml(notas) +
         '<div class="card" id="historico-card"><h2>Histórico completo</h2><div class="empty"><span class="spinner"></span>Carregando histórico completo (inclusive fechados)...</div></div>';
       if (isGroup) wireViewToggle(resultEl);
       wireOpenCard();
@@ -682,7 +1022,7 @@
 
     var html = '';
     if (isGroup) html += viewToggleHtml(mode);
-    html += openCardsHtml(notas);
+    html += openSectionHtml(notas);
 
     if (ajustes.length > 0) {
       html += '<div class="card"><h2>Reconciliação — ' + ajustes.length + ' ' + (ajustes.length === 1 ? 'item encontrado' : 'itens encontrados') + ' pra revisar</h2>';
@@ -707,6 +1047,7 @@
   }
 
   function historicoFailed() {
+    if (searchState) { searchState.histFailed = true; if (activeClaimGroups().length) { lastEngNote = 'nohist'; var os = document.getElementById('open-section'); if (os) { os.innerHTML = openCardsHtml(currentNotas, null); wireOpenCard(); } } }
     var card = document.getElementById('historico-card');
     if (card) card.innerHTML = '<h2>Histórico completo</h2><div class="status-msg bad">Não foi possível carregar o histórico completo agora (timeout). Tente buscar de novo.</div>';
   }
@@ -1093,6 +1434,7 @@
   function renderHistoricoSection() {
     var card = document.getElementById('historico-card');
     if (!card || !searchState || searchState.histByTax === null) return;
+    refreshOpenSection();
     var s = searchState;
     var notasIsGroup = isRealGroup(s.notasByTax, s.notasByMatriz, s.individualField);
     var ajustesIsGroup = isRealGroup(s.ajustesByTax, s.ajustesByMatriz, s.individualField);
@@ -1244,9 +1586,14 @@
   // 2M+ linhas. 'Customer ID' e mantido so pra montar o mapa de CNPJ Matriz.
   // 'Date Closed' (data de quitacao) e 'Memo' entram so pra conciliar cobranca x
   // pagamento: o Memo e reduzido na hora a um mes de referencia curto ('Ref',
-  // ex "2024-07") e descartado, pra nao pesar na memoria nem no historico.
-  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo', 'CRM Invoice #', 'Invoice Type', 'Latam - Preprinted number'];
-  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref'];
+  // ex "2024-07") e a uma versao compacta (compactMemo), pra nao pesar na memoria.
+  var SLIM_FIELDS = ['Internal ID', 'Tax ID', 'Customer ID', 'Parent ID', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'New Due Date', 'Currency', 'Total Billed', 'Paid', 'Remaining', 'Status', 'GEOs', 'Subsidiary', 'Date Closed', 'Memo'];
+  // Token, Invoice Type e NF viajam empacotados num unico campo interno ('XP'): linhas com
+  // mais de 22 propriedades fazem o V8 trocar a estrutura do objeto e a memoria do
+  // upload mais que dobra (medido: 680 MB -> 1,5 GB so no arquivo de 2026).
+  var PACK_SRC = ['CRM Invoice #', 'Invoice Type', 'Latam - Preprinted number'];
+  var PACK_SEP = '\u0001';
+  var HISTORICO_COLUMNS = ['Internal ID', 'Tax ID', 'CNPJ Matriz', 'Customer ID', 'NetSuite Matriz', 'Company', 'Invoice #', 'Transaction', 'Date', 'Due Date', 'Total Billed', 'Paid', 'Remaining', 'Status', 'Date Closed', 'Ref', 'Memo', 'CRM Invoice #', 'Invoice Type', 'Latam - Preprinted number'];
   var pendingClean = null, pendingAjustes = null, pendingHistorico = null;
 
   // Mes de referencia da cobranca, tirado do Memo da fatura:
@@ -1257,16 +1604,39 @@
     var m = s.match(/(\d{4})-(\d{2})-\d{2}\s*-\s*\d{4}-\d{2}-\d{2}/) || s.match(/ended\s+(\d{4})-(\d{2})/i) || s.match(/(\d{4})-(\d{2})-\d{2}/);
     return m ? m[1] + '-' + m[2] : '';
   }
-  function finishSlim(out) {
-    out['Ref'] = refFromMemo(out['Memo']);
-    out['Memo'] = '';
+  // Memo compacto (so o que o motor de conciliacao e a tabela usam), pra nao
+  // estourar memoria: fatura -> so o periodo ('AAAA-MM-DD - AAAA-MM-DD');
+  // pagamento/Credit Memo/Journal -> o inicio do Memo (identifica o padrao,
+  // o tipo do CM e a direcao do Journal).
+  function compactMemo(tx, memo) {
+    var s = String(memo || '');
+    if (tx === 'Invoice') {
+      var m = s.match(/(\d{4}-\d{2}-\d{2})\s*(?:-|a|to)\s*(\d{4}-\d{2}-\d{2})/);
+      if (m) return m[1] + ' - ' + m[2];
+      var e = s.match(/(?:finalizado\s+em|ended)\s+(\d{4}-\d{2}-\d{2})/i);
+      return e ? 'ate ' + e[1] : s.slice(0, 30);
+    }
+    return s.slice(0, tx === 'Payment' ? 28 : 48);
+  }
+  // 'pack' = [token, tipo, NF] da linha (so Invoice e Credit Memo guardam; pagamento nao precisa).
+  function finishSlim(out, pack) {
+    var tx = out['Transaction'];
+    out['Memo'] = compactMemo(tx, out['Memo']);
+    out['XP'] = (pack && (tx === 'Invoice' || tx === 'Credit Memo')) ? pack.join(PACK_SEP) : '';
     return out;
+  }
+  // Le um campo da linha enxuta, desempacotando Token/Tipo/NF e calculando o Ref sob demanda.
+  function rowValue(r, c) {
+    var pi = PACK_SRC.indexOf(c);
+    if (pi !== -1) { if (r[c] !== undefined) return r[c]; return r['XP'] ? (r['XP'].split(PACK_SEP)[pi] || '') : ''; }
+    if (c === 'Ref') return r['Ref'] !== undefined ? r['Ref'] : refFromMemo(r['Memo']);
+    return r[c];
   }
 
   function slimRow(r) {
     var out = {};
     SLIM_FIELDS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
-    return finishSlim(out);
+    return finishSlim(out, PACK_SRC.map(function (c) { return r[c] !== undefined ? String(r[c]) : ''; }));
   }
 
   // O Excel em Windows configurado em portugues do Brasil às vezes salva
@@ -1318,6 +1688,7 @@
     var fieldIdx = {};
     headers.forEach(function (h, i) { fieldIdx[h.trim()] = i; });
     var neededIdx = SLIM_FIELDS.map(function (f) { return fieldIdx[f]; });
+    var packIdx = PACK_SRC.map(function (f) { return fieldIdx[f]; });
 
     var total = lines.length - 1;
     var out = [];
@@ -1335,7 +1706,8 @@
           var colIdx = neededIdx[k];
           rowObj[SLIM_FIELDS[k]] = (colIdx !== undefined && cols[colIdx] !== undefined) ? cols[colIdx] : '';
         }
-        out.push(finishSlim(rowObj));
+        var pk = [packIdx[0] !== undefined ? cols[packIdx[0]] : '', packIdx[1] !== undefined ? cols[packIdx[1]] : '', packIdx[2] !== undefined ? cols[packIdx[2]] : ''];
+        out.push(finishSlim(rowObj, [pk[0] || '', pk[1] || '', pk[2] || '']));
       }
       onProgress(Math.min(i - 1, total), total);
       if (i < lines.length) {
@@ -1550,7 +1922,7 @@
 
   function cleanRow(r) {
     var out = {};
-    CLEAN_COLUMNS.forEach(function (c) { out[c] = r[c] !== undefined ? r[c] : ''; });
+    CLEAN_COLUMNS.forEach(function (c) { var v = rowValue(r, c); out[c] = v !== undefined ? v : ''; });
     out['Due Date'] = excelSerialToDate(out['Due Date']);
     out['New Due Date'] = excelSerialToDate(out['New Due Date']);
     return out;
@@ -1627,7 +1999,7 @@
         return s;
       };
       var lines = [columns.map(esc).join(',')];
-      rows.forEach(function (r) { lines.push(columns.map(function (c) { return esc(r[c]); }).join(',')); });
+      rows.forEach(function (r) { lines.push(columns.map(function (c) { return esc(rowValue(r, c)); }).join(',')); });
       return lines.join('\r\n');
     }
 
