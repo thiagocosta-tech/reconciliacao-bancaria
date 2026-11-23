@@ -170,6 +170,15 @@
   .empty { color: var(--ink-soft); font-size: 0.9rem; padding: 1rem 0; }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: -2px; margin-right: 0.4rem; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Modo embutido (aba dentro do PayHub): sem cabecalho nem aba de upload */
+  body.embed header.top, body.embed h1, body.embed .sub, body.embed .tabs, body.embed .panel[data-panel="atualizar"] { display: none !important; }
+  body.embed .wrap { max-width: none; padding: 1rem 1.1rem 3rem; }
+  body.embed .panel[data-panel="consulta"] { display: block; }
+  .ph-hints { border: 1px solid var(--line); border-radius: 12px; background: var(--paper-sunk); padding: 0.7rem 0.9rem; margin: 0 0 0.9rem; }
+  .ph-hints-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 0.2rem; }
+  .ph-hint { display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; padding: 0.45rem 0; border-top: 1px solid var(--line); font-size: 0.85rem; }
+  .ph-hint:first-of-type { border-top: 0; }
+  .ph-hint .why { color: var(--ink-soft); font-size: 0.78rem; }
 </style>
 </head>
 <body>
@@ -209,6 +218,7 @@
     <details class="card claims" id="claims-card">
       <summary><span class="claims-title">Pagamentos alegados pelo cliente</span> <span class="claims-opt">opcional</span></summary>
       <p class="hint">Informe só os <strong>códigos</strong>: o pagamento (ex.: PBR_638939) e a(s) nota(s) que o cliente diz ter quitado (ex.: INBR_606008 + INBR_642699). A ferramenta busca data, valor, vencimento e memo sozinha. Use <strong>+ Adicionar outro pagamento</strong> se o cliente mandou mais de um comprovante: cada grupo fica separado dos outros.</p>
+      <div id="payhub-hints"></div>
       <div id="claims-groups"></div>
       <div class="claims-actions">
         <button class="ghost" type="button" id="btn-add-group">+ Adicionar outro pagamento</button>
@@ -247,7 +257,7 @@
 <script>
   // Data da ultima atualizacao do PROGRAMA (codigo). Atualizar a cada mudanca
   // publicada, com data e hora (dd/mm/aaaa hh:mm). (A data da BASE de dados vem da aba Meta, na linha abaixo.)
-  var PROGRAM_UPDATED = '16/11/2026 15:15';
+  var PROGRAM_UPDATED = '23/11/2026 14:13';
   document.getElementById('prog-version').textContent = 'Programa atualizado em: ' + PROGRAM_UPDATED;
 
   var APPS_SCRIPT_URL ="https://script.google.com/a/macros/gympass.com/s/AKfycbwpLgrPAgpoM10SW0Aa1J81-0xbSfgj-xHOETPuYvHiWtZtTCJVlR1EO-AJEPFRs_MSyg/exec";
@@ -2063,6 +2073,59 @@
 
       sendChunk(1);
     }
+  }
+
+  // ---------- Integracao com o PayHub (aba embutida) ----------
+  // O PayHub abre esta pagina num iframe (?embed=1&q=<CUS ou Tax ID>) e manda,
+  // por postMessage, o cliente selecionado e as "pistas de pagamento" que ele
+  // ja calcula (pagamento sem aplicar, em outra carteira, citando a nota).
+  // Sem iframe nada disso roda e a ferramenta funciona como sempre.
+  var PAYHUB_EMBED = /[?&]embed=1\b/.test(location.search);
+  if (PAYHUB_EMBED) document.body.classList.add('embed');
+  var phLastQuery = '';
+  function phStartSearch(q) {
+    q = String(q || '').trim();
+    if (!q || q === phLastQuery) return;
+    phLastQuery = q;
+    document.getElementById('cnpj-input').value = q;
+    onBuscar();
+  }
+  function phAddHintToClaims(h) {
+    var gi = -1;
+    claimGroups.forEach(function (g, i) { if (gi < 0 && g.pays.indexOf(engCode(h.payment)) !== -1) gi = i; });
+    if (gi < 0) { claimGroups.forEach(function (g, i) { if (gi < 0 && !g.pays.length && !g.invs.length) gi = i; }); }
+    if (gi < 0) { claimGroups.push({ pays: [], invs: [] }); gi = claimGroups.length - 1; }
+    var pc = engCode(h.payment), ic = engCode(h.invoice);
+    if (pc && claimGroups[gi].pays.indexOf(pc) === -1) claimGroups[gi].pays.push(pc);
+    if (ic && claimGroups[gi].invs.indexOf(ic) === -1) claimGroups[gi].invs.push(ic);
+    document.getElementById('claims-card').open = true;
+    renderClaims();
+  }
+  function phRenderHints(hints) {
+    var box = document.getElementById('payhub-hints');
+    if (!box) return;
+    if (!hints || !hints.length) { box.innerHTML = ''; return; }
+    box.innerHTML = '<div class="ph-hints"><div class="ph-hints-title">Pistas do PayHub (pagamentos que parecem ser deste cliente)</div>' +
+      hints.slice(0, 12).map(function (h, i) {
+        return '<div class="ph-hint"><div><strong>' + escapeHtml(h.payment || '') + '</strong>' +
+          (h.amount != null ? ' · ' + fmtBRL(Number(h.amount) || 0) : '') + (h.date ? ' · ' + escapeHtml(h.date) : '') +
+          (h.invoice ? ' → <strong>' + escapeHtml(h.invoice) + '</strong>' : '') +
+          '<div class="why">' + escapeHtml(h.why || '') + (h.owner ? ' · carteira ' + escapeHtml(h.owner) + (h.ownerName ? ' (' + escapeHtml(h.ownerName) + ')' : '') : '') + '</div></div>' +
+          '<button type="button" class="ghost small" data-ph="' + i + '">Usar nos vínculos</button></div>';
+      }).join('') + '</div>';
+    box.querySelectorAll('[data-ph]').forEach(function (b) {
+      b.addEventListener('click', function () { phAddHintToClaims(hints[+b.dataset.ph]); });
+    });
+  }
+  window.addEventListener('message', function (ev) {
+    if (ev.source !== window.parent || !ev.data || ev.data.type !== 'payhub-context') return;
+    phRenderHints(ev.data.hints);
+    if (ev.data.q) phStartSearch(ev.data.q);
+  });
+  if (PAYHUB_EMBED) {
+    try { window.parent.postMessage({ type: 'recon-ready' }, '*'); } catch (e) {}
+    var phQ = (location.search.match(/[?&]q=([^&]+)/) || [])[1];
+    if (phQ) phStartSearch(decodeURIComponent(phQ));
   }
 </script>
 </body>
